@@ -1,0 +1,119 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function memberPath(leagueId) {
+      return /databases/$(database)/documents/leagues/$(leagueId)/members/$(request.auth.uid);
+    }
+
+    function isMember(leagueId) {
+      return isSignedIn() && exists(memberPath(leagueId));
+    }
+
+    function isAdmin(leagueId) {
+      return isMember(leagueId) && get(memberPath(leagueId)).data.role == "admin";
+    }
+
+    function racePath(leagueId, raceId) {
+      return /databases/$(database)/documents/leagues/$(leagueId)/races/$(raceId);
+    }
+
+    function raceLocked(leagueId, raceId) {
+      return !exists(racePath(leagueId, raceId)) ||
+        get(racePath(leagueId, raceId)).data.status in ["locked", "completed"] ||
+        request.time >= get(racePath(leagueId, raceId)).data.lockTime;
+    }
+
+    function validPickShape(data) {
+      return data.tierA is list &&
+        data.tierB is list &&
+        data.tierC is list &&
+        data.tierA.size() == 3 &&
+        data.tierB.size() == 2 &&
+        data.tierC.size() == 1;
+    }
+
+    function pickWriteAllowed(leagueId, data) {
+      return isMember(leagueId) &&
+        data.userId == request.auth.uid &&
+        data.raceId is string &&
+        validPickShape(data) &&
+        !raceLocked(leagueId, data.raceId);
+    }
+
+    match /users/{userId} {
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    match /leagues/{leagueId} {
+      allow read: if isMember(leagueId);
+      allow create: if false;
+      allow update, delete: if isAdmin(leagueId);
+
+      match /members/{userId} {
+        allow read: if isMember(leagueId);
+        allow create, update, delete: if isAdmin(leagueId);
+      }
+
+      match /races/{raceId} {
+        allow read: if isMember(leagueId);
+        allow create, update, delete: if isAdmin(leagueId);
+      }
+
+      match /drivers/{driverId} {
+        allow read: if isMember(leagueId);
+        allow create, update, delete: if isAdmin(leagueId);
+      }
+
+      match /standingsSnapshots/{snapshotId} {
+        allow read: if isMember(leagueId);
+        allow create, update, delete: if isAdmin(leagueId);
+      }
+
+      match /tiers/{raceId} {
+        allow read: if isMember(leagueId);
+        allow create, update, delete: if isAdmin(leagueId);
+      }
+
+      match /picks/{pickId} {
+        allow read: if isMember(leagueId) &&
+          (isAdmin(leagueId) || resource.data.userId == request.auth.uid);
+
+        allow create: if pickWriteAllowed(leagueId, request.resource.data);
+
+        allow update: if pickWriteAllowed(leagueId, request.resource.data) &&
+          resource.data.userId == request.auth.uid &&
+          resource.data.raceId == request.resource.data.raceId;
+
+        allow delete: if false;
+      }
+
+      match /racePoints/{raceId} {
+        allow read: if isMember(leagueId);
+        allow create, update, delete: if isAdmin(leagueId);
+      }
+
+      match /adjustments/{adjustmentId} {
+        allow read: if isMember(leagueId);
+        allow create, update, delete: if isAdmin(leagueId);
+      }
+
+      match /weeklyScores/{scoreId} {
+        allow read: if isMember(leagueId);
+        allow create, update, delete: if false;
+      }
+
+      match /seasonScores/{userId} {
+        allow read: if isMember(leagueId);
+        allow create, update, delete: if false;
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
