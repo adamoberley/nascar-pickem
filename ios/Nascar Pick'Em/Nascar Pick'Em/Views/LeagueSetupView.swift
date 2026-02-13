@@ -80,7 +80,7 @@ struct LeagueSetupView: View {
                                 }
                                 .pickerStyle(.menu)
                             } else {
-                                Text("Display Name")
+                                Text("First and Last Name")
                                     .font(NASCARTheme.textFont(size: 15, weight: .semibold))
                                 TextField("Your name", text: $displayName)
                                     .textFieldStyle(.plain)

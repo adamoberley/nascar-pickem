@@ -1,9 +1,11 @@
 @import url("https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700;800&family=Source+Sans+3:wght@400;600;700&display=swap");
 
 /* Custom Fonts – Racer Italic (display/race titles, matches iOS) */
+/* Import via relative path so Vite bundles fonts – avoids Safari/iOS cache mismatch with preload */
 @font-face {
   font-family: "Racer Italic";
-  src: url("../assets/fonts/RacerItalic.otf") format("opentype");
+  src: url("../assets/fonts/RacerItalic.woff2") format("woff2"),
+       url("../assets/fonts/RacerItalic.otf") format("opentype");
   font-weight: normal;
   font-style: italic;
   font-display: swap;

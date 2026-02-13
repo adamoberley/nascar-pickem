@@ -310,7 +310,7 @@ function LeagueAccessView({
             </>
           ) : (
             <>
-              <label htmlFor="display-name">Display Name</label>
+              <label htmlFor="display-name">First and Last Name</label>
               <input
                 id="display-name"
                 value={displayName}
