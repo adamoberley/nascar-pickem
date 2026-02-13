@@ -1,83 +1,224 @@
 import Foundation
 import FirebaseFirestore
 import FirebaseFunctions
+import FirebaseAuth
+import os.log
 
 final class LeagueRepository {
     static let shared = LeagueRepository()
 
     private let db = Firestore.firestore()
-    private let functions = Functions.functions()
+    // Specify region to match Cloud Functions deployment (us-central1)
+    private let functions = Functions.functions(region: "us-central1")
+    private let logger = Logger(subsystem: "com.nascar.pickem", category: "LeagueRepository")
 
-    private init() {}
+    private init() {
+        logger.info("🔵 LeagueRepository initialized with region: us-central1")
+    }
 
     func fetchMemberships(userId: String, completion: @escaping (Result<[(LeagueSummary, LeagueMember)], Error>) -> Void) {
+        self.logger.info("🔵 Loading memberships for userId: \(userId)")
+        NSLog("🔵 Loading memberships for userId: \(userId)")
+        
+        // Filter by userId field to match security rules
+        // This allows the security rule to properly evaluate the collection group query
         db.collectionGroup("members")
+            .whereField("userId", isEqualTo: userId)
             .getDocuments { [weak self] snapshot, error in
+                guard let self = self else { return }
+                
                 if let error {
+                    self.logger.error("❌ Collection group query error: \(error.localizedDescription, privacy: .public)")
+                    NSLog("❌ Collection group query error: %@", error.localizedDescription)
                     completion(.failure(error))
                     return
                 }
 
-                guard let self, let docs = snapshot?.documents else {
+                guard let docs = snapshot?.documents else {
+                    self.logger.info("⚠️ No documents returned from collection group query")
+                    NSLog("⚠️ No documents returned from collection group query")
                     completion(.success([]))
                     return
                 }
 
+                self.logger.info("🔵 Collection group query returned \(docs.count) member documents")
+                NSLog("🔵 Collection group query returned %d member documents", docs.count)
+
+                // Documents are already filtered by userId in the query
+                let userMemberDocs = docs
+                self.logger.info("🔵 Found \(userMemberDocs.count) member documents for current user")
+                NSLog("🔵 Found %d member documents for current user", userMemberDocs.count)
+
                 let group = DispatchGroup()
                 var result: [(LeagueSummary, LeagueMember)] = []
-                var firstError: Error?
+                var errors: [Error] = []
 
-                docs.forEach { memberDoc in
-                    guard memberDoc.documentID == userId else {
-                        return
-                    }
+                userMemberDocs.forEach { memberDoc in
                     guard let leagueRef = memberDoc.reference.parent.parent else {
+                        self.logger.warning("⚠️ Member document has no parent league")
+                        NSLog("⚠️ Member document has no parent league")
                         return
                     }
+                    
+                    let leagueId = leagueRef.documentID
                     let member = self.parseMember(document: memberDoc)
 
                     group.enter()
+                    self.logger.info("🔵 Attempting to read league: \(leagueId)")
+                    NSLog("🔵 Attempting to read league: %@", leagueId)
+                    
                     leagueRef.getDocument { leagueSnap, leagueError in
                         defer { group.leave() }
+                        
                         if let leagueError {
-                            firstError = leagueError
+                            self.logger.error("❌ Failed to read league \(leagueId): \(leagueError.localizedDescription, privacy: .public)")
+                            NSLog("❌ Failed to read league %@: %@", leagueId, leagueError.localizedDescription)
+                            errors.append(leagueError)
                             return
                         }
-                        guard let leagueSnap, let data = leagueSnap.data() else {
+                        
+                        guard let leagueSnap, leagueSnap.exists, let data = leagueSnap.data() else {
+                            self.logger.warning("⚠️ League document does not exist or has no data: \(leagueId)")
+                            NSLog("⚠️ League document does not exist or has no data: %@", leagueId)
                             return
                         }
 
+                        self.logger.info("✅ Successfully read league: \(leagueId)")
+                        NSLog("✅ Successfully read league: %@", leagueId)
+
+                        let memberNames = (data["memberNames"] as? [String]) ?? (data["expectedMemberNames"] as? [String]) ?? []
                         let league = LeagueSummary(
                             id: leagueSnap.documentID,
                             name: data.string("name"),
                             seasonYear: data.int("seasonYear"),
                             inviteCode: data.string("inviteCode"),
-                            payoutConfigText: data.string("payoutConfigText")
+                            payoutConfigText: data.string("payoutConfigText"),
+                            memberNames: memberNames
                         )
                         result.append((league, member))
                     }
                 }
 
                 group.notify(queue: .main) {
-                    if let firstError {
-                        completion(.failure(firstError))
+                    // Only fail if we have errors AND no successful results
+                    // This allows partial success (some leagues readable, some not)
+                    if !errors.isEmpty && result.isEmpty {
+                        self.logger.error("❌ All league reads failed. First error: \(errors.first!.localizedDescription, privacy: .public)")
+                        NSLog("❌ All league reads failed. First error: %@", errors.first!.localizedDescription)
+                        completion(.failure(errors.first!))
                         return
                     }
+                    
+                    if !errors.isEmpty {
+                        self.logger.warning("⚠️ Some league reads failed (\(errors.count) errors), but \(result.count) succeeded")
+                        NSLog("⚠️ Some league reads failed (%d errors), but %d succeeded", errors.count, result.count)
+                    }
 
+                    self.logger.info("✅ Loaded \(result.count) valid memberships")
+                    NSLog("✅ Loaded %d valid memberships", result.count)
                     completion(.success(result.sorted { $0.0.name < $1.0.name }))
                 }
             }
     }
 
-    func joinLeague(inviteCode: String, displayName: String, completion: @escaping (Result<Void, Error>) -> Void) {
-        functions.httpsCallable("joinLeagueByInvite").call([
-            "inviteCode": inviteCode,
-            "displayName": displayName,
-        ]) { _, error in
+    /// Fetches league name and member names for the join flow (auth required).
+    func getLeaguePreview(inviteCode: String, completion: @escaping (Result<LeaguePreview, Error>) -> Void) {
+        guard Auth.auth().currentUser != nil else {
+            completion(.failure(NSError(domain: "LeagueRepository", code: -1, userInfo: [NSLocalizedDescriptionKey: "User must be signed in"])))
+            return
+        }
+        functions.httpsCallable("getLeaguePreviewByInviteCode").call(["inviteCode": inviteCode.uppercased()]) { [weak self] result, error in
             if let error {
+                self?.logger.error("❌ getLeaguePreview error: \(error.localizedDescription, privacy: .public)")
                 completion(.failure(error))
                 return
             }
+            guard let data = result?.data as? [String: Any],
+                  let leagueId = data["leagueId"] as? String,
+                  let name = data["name"] as? String else {
+                completion(.failure(NSError(domain: "LeagueRepository", code: -2, userInfo: [NSLocalizedDescriptionKey: "Invalid preview response"])))
+                return
+            }
+            let memberNames = (data["memberNames"] as? [String]) ?? (data["expectedMemberNames"] as? [String]) ?? []
+            completion(.success(LeaguePreview(leagueId: leagueId, name: name, memberNames: memberNames)))
+        }
+    }
+
+    func joinLeague(inviteCode: String, displayName: String, completion: @escaping (Result<Void, Error>) -> Void) {
+        // Verify user is authenticated
+        guard let currentUser = Auth.auth().currentUser else {
+            let error = NSError(
+                domain: "LeagueRepository",
+                code: -1,
+                userInfo: [NSLocalizedDescriptionKey: "User must be signed in to join a league"]
+            )
+            self.logger.error("❌ joinLeague called but user is not authenticated")
+            NSLog("❌ joinLeague: User not authenticated")
+            completion(.failure(error))
+            return
+        }
+        
+        self.logger.info("🔵 Calling joinLeagueByInvite with inviteCode: \(inviteCode), userId: \(currentUser.uid)")
+        NSLog("🔵 Calling joinLeagueByInvite - User: \(currentUser.uid), InviteCode: \(inviteCode)")
+        
+        functions.httpsCallable("joinLeagueByInvite").call([
+            "inviteCode": inviteCode,
+            "displayName": displayName,
+        ]) { [weak self] result, error in
+            guard let self = self else { return }
+            
+            if let error {
+                // Log detailed error for debugging
+                self.logger.error("❌ joinLeague error: \(error.localizedDescription, privacy: .public)")
+                
+                // Extract detailed error information
+                var errorDetails: [String] = [error.localizedDescription]
+                
+                if let nsError = error as NSError? {
+                    errorDetails.append("Domain: \(nsError.domain)")
+                    errorDetails.append("Code: \(nsError.code)")
+                    
+                    // Check for Firebase Functions specific error details
+                    let userInfo = nsError.userInfo
+                    if !userInfo.isEmpty {
+                        self.logger.error("Error UserInfo: \(String(describing: userInfo), privacy: .public)")
+                        
+                        // Extract nested error information
+                        if let underlyingError = userInfo[NSUnderlyingErrorKey] as? NSError {
+                            errorDetails.append("Underlying Error: \(underlyingError.localizedDescription)")
+                            if !underlyingError.userInfo.isEmpty {
+                                self.logger.error("Underlying UserInfo: \(String(describing: underlyingError.userInfo), privacy: .public)")
+                            }
+                        }
+                        
+                        // Check for Firebase Functions error details
+                        if let details = userInfo["details"] {
+                            errorDetails.append("Details: \(String(describing: details))")
+                        }
+                        
+                        if let message = userInfo["message"] as? String {
+                            errorDetails.append("Message: \(message)")
+                        }
+                    }
+                }
+                
+                // Use NSLog for guaranteed console output
+                NSLog("❌ joinLeague error details:\n%@", errorDetails.joined(separator: "\n"))
+                
+                // Create a more detailed error
+                let detailedError = NSError(
+                    domain: "LeagueRepository",
+                    code: (error as NSError).code,
+                    userInfo: [
+                        NSLocalizedDescriptionKey: errorDetails.joined(separator: "\n")
+                    ]
+                )
+                
+                completion(.failure(detailedError))
+                return
+            }
+            
+            self.logger.info("✅ joinLeague success")
             completion(.success(()))
         }
     }
@@ -89,16 +230,82 @@ final class LeagueRepository {
         payoutConfigText: String,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
+        // Verify user is authenticated
+        guard let currentUser = Auth.auth().currentUser else {
+            let error = NSError(
+                domain: "LeagueRepository",
+                code: -1,
+                userInfo: [NSLocalizedDescriptionKey: "User must be signed in to create a league"]
+            )
+            self.logger.error("❌ createLeague called but user is not authenticated")
+            NSLog("❌ createLeague: User not authenticated")
+            completion(.failure(error))
+            return
+        }
+        
+        self.logger.info("🔵 Calling createLeague with name: \(name), inviteCode: \(inviteCode), userId: \(currentUser.uid)")
+        NSLog("🔵 Calling createLeague - User: \(currentUser.uid), Name: \(name), InviteCode: \(inviteCode)")
+        
         functions.httpsCallable("createLeague").call([
             "name": name,
             "seasonYear": seasonYear,
             "inviteCode": inviteCode,
             "payoutConfigText": payoutConfigText,
-        ]) { _, error in
+        ]) { [weak self] result, error in
+            guard let self = self else { return }
+            
             if let error {
-                completion(.failure(error))
+                // Log detailed error for debugging
+                self.logger.error("❌ createLeague error: \(error.localizedDescription, privacy: .public)")
+                
+                // Extract detailed error information
+                var errorDetails: [String] = [error.localizedDescription]
+                
+                if let nsError = error as NSError? {
+                    errorDetails.append("Domain: \(nsError.domain)")
+                    errorDetails.append("Code: \(nsError.code)")
+                    
+                    // Check for Firebase Functions specific error details
+                    let userInfo = nsError.userInfo
+                    if !userInfo.isEmpty {
+                        self.logger.error("Error UserInfo: \(String(describing: userInfo), privacy: .public)")
+                        
+                        // Extract nested error information
+                        if let underlyingError = userInfo[NSUnderlyingErrorKey] as? NSError {
+                            errorDetails.append("Underlying Error: \(underlyingError.localizedDescription)")
+                            if !underlyingError.userInfo.isEmpty {
+                                self.logger.error("Underlying UserInfo: \(String(describing: underlyingError.userInfo), privacy: .public)")
+                            }
+                        }
+                        
+                        // Check for Firebase Functions error details
+                        if let details = userInfo["details"] {
+                            errorDetails.append("Details: \(String(describing: details))")
+                        }
+                        
+                        if let message = userInfo["message"] as? String {
+                            errorDetails.append("Message: \(message)")
+                        }
+                    }
+                }
+                
+                // Use NSLog for guaranteed console output
+                NSLog("❌ createLeague error details:\n%@", errorDetails.joined(separator: "\n"))
+                
+                // Create a more detailed error
+                let detailedError = NSError(
+                    domain: "LeagueRepository",
+                    code: (error as NSError).code,
+                    userInfo: [
+                        NSLocalizedDescriptionKey: errorDetails.joined(separator: "\n")
+                    ]
+                )
+                
+                completion(.failure(detailedError))
                 return
             }
+            
+            self.logger.info("✅ createLeague success")
             completion(.success(()))
         }
     }
@@ -136,13 +343,15 @@ final class LeagueRepository {
                 return
             }
 
+            let memberNames = (data["memberNames"] as? [String]) ?? (data["expectedMemberNames"] as? [String]) ?? []
             onChange(
                 LeagueSummary(
                     id: snapshot.documentID,
                     name: data.string("name"),
                     seasonYear: data.int("seasonYear"),
                     inviteCode: data.string("inviteCode"),
-                    payoutConfigText: data.string("payoutConfigText")
+                    payoutConfigText: data.string("payoutConfigText"),
+                    memberNames: memberNames
                 )
             )
         }
@@ -188,7 +397,8 @@ final class LeagueRepository {
                         weekIndex: data.int("weekIndex"),
                         startTime: startTime,
                         lockTime: lockTime,
-                        status: status
+                        status: status,
+                        tvChannel: { let s = data.string("tvChannel"); return s.isEmpty ? nil : s }()
                     )
                 } ?? []
 
@@ -306,6 +516,18 @@ final class LeagueRepository {
             .addSnapshotListener { snapshot, _ in
                 let items = snapshot?.documents.map { self.parseWeeklyScore(document: $0) } ?? []
                 onChange(items.sorted { $0.raceId < $1.raceId })
+            }
+    }
+
+    /// Observes all weekly scores in the league (for sprint leaderboard computation).
+    func observeAllWeeklyScores(
+        leagueId: String,
+        onChange: @escaping ([WeeklyScoreItem]) -> Void
+    ) -> ListenerRegistration {
+        db.collection("leagues").document(leagueId).collection("weeklyScores")
+            .addSnapshotListener { snapshot, _ in
+                let items = snapshot?.documents.map { self.parseWeeklyScore(document: $0) } ?? []
+                onChange(items)
             }
     }
 

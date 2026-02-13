@@ -55,21 +55,31 @@
           "order": "DESCENDING"
         }
       ]
-    },
+    }
+  ],
+  "fieldOverrides": [
     {
       "collectionGroup": "members",
-      "queryScope": "COLLECTION",
-      "fields": [
+      "fieldPath": "userId",
+      "ttl": false,
+      "indexes": [
         {
-          "fieldPath": "paidStatus",
-          "order": "ASCENDING"
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
         },
         {
-          "fieldPath": "displayName",
-          "order": "ASCENDING"
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "arrayConfig": "CONTAINS",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
         }
       ]
     }
-  ],
-  "fieldOverrides": []
+  ]
 }

@@ -1,9 +1,11 @@
 # NASCAR Pick'Em (Firebase + SwiftUI + Web)
 
-Private season-long NASCAR Pick'Em platform for ~20-21 users with:
-- Player app on iOS (SwiftUI source in `ios/NASCARPickEm`)
-- Responsive web app for Android + Admin dashboard (React + Firebase Hosting)
-- Firebase backend (Auth, Firestore, Cloud Functions, scheduled jobs)
+Private season-long NASCAR Pick'Em platform for ~20–21 users with:
+- **iOS app** (SwiftUI) in `ios/Nascar Pick'Em/`
+- **Web app** (React + Vite) for players and admins — responsive, works on Android and desktop
+- **Firebase backend** — Auth, Firestore, Cloud Functions, scheduled jobs
+
+**Requirements:** Node.js ≥ 20 (see `package.json` engines).
 
 ## What This Project Includes
 
@@ -20,12 +22,16 @@ Private season-long NASCAR Pick'Em platform for ~20-21 users with:
 
 ## Repository Layout
 
-- `functions/`: Firebase Cloud Functions (TypeScript)
-- `web/`: React web app (mobile responsive, admin role included)
-- `ios/NASCARPickEm/`: SwiftUI iOS app source files
-- `firestore.rules`: access control
-- `firestore.indexes.json`: query indexes
-- `firebase.json`: Firebase deployment config
+| Path | Description |
+|------|-------------|
+| `functions/` | Firebase Cloud Functions (TypeScript) |
+| `web/` | React + Vite web app (mobile responsive, admin role included) |
+| `ios/Nascar Pick'Em/` | SwiftUI iOS app (Xcode project and source) |
+| `docs/` | Project documentation (see [docs/README.md](docs/README.md)) |
+| `scripts/` | `setup-env.js`, `init-db.js` |
+| `firestore.rules` | Firestore access control |
+| `firestore.indexes.json` | Firestore query indexes |
+| `firebase.json` | Firebase deployment config |
 
 ## Data Model (Firestore)
 
@@ -63,20 +69,12 @@ Player/admin callables:
 - `joinLeagueByInvite`
 - `savePick`
 
-## NASCAR Data Ingestion Adapter
+## NASCAR Data Ingestion
 
-Provider interface is in `functions/src/provider.ts`.
+Provider interface: `functions/src/provider.ts`. See [docs/provider-adapter.md](docs/provider-adapter.md) and [docs/race-results-sources.md](docs/race-results-sources.md).
 
-Two modes:
-- HTTP adapter using env var `NASCAR_PROVIDER_BASE_URL` (plus optional token)
-- Static fallback provider when no external source is configured
-
-HTTP adapter expected endpoints:
-- `GET /schedule?seasonYear=YYYY`
-- `GET /standings?seasonYear=YYYY`
-- `GET /results/{raceKey}?seasonYear=YYYY`
-
-This lets you swap to another NASCAR/motorsports provider later without rewriting scoring logic.
+- **Static fallback (default):** Built-in 2026 schedule, standings, and Cook Out Clash result. No external API needed.
+- **HTTP adapter (optional):** Set `NASCAR_PROVIDER_BASE_URL` (and optionally `NASCAR_PROVIDER_TOKEN`) for a custom provider implementing the adapter endpoints (schedule, standings, results).
 
 ## Web App Features
 
@@ -98,43 +96,41 @@ Admin features:
 
 ## iOS App (SwiftUI)
 
-SwiftUI player client source is under `ios/NASCARPickEm`:
-- auth
-- league join/create
-- home/picks/standings/race tabs
+Source lives in `ios/Nascar Pick'Em/`:
+- Auth (sign in / create account)
+- League join/create
+- Tabs: Home, Picks, Standings, Race
 - Firestore listeners and callable integration
 
 To run on iOS:
-1. Create a new Xcode iOS App project (SwiftUI).
-2. Copy files from `ios/NASCARPickEm` into the project.
-3. Add Firebase iOS SDK packages:
+1. Open `ios/Nascar Pick'Em/Nascar Pick'Em.xcodeproj` in Xcode.
+2. Add Firebase iOS SDK packages (Swift Package Manager):
    - `FirebaseAuth`
    - `FirebaseFirestore`
    - `FirebaseFunctions`
    - `FirebaseCore`
-4. Add your `GoogleService-Info.plist` to the iOS target.
+3. Add your `GoogleService-Info.plist` from Firebase Console (Project settings → Your apps → iOS) to the app target.
+4. Build and run on a simulator or device.
 
 ## Setup and Deploy
 
-### 1. Create Firebase project
+Detailed steps: [docs/setup-checklist.md](docs/setup-checklist.md). Quick path:
 
-Enable:
-- Authentication (Email/Password)
-- Firestore
-- Functions
-- Hosting
-- Scheduler (for scheduled functions)
+### 1. Firebase project
 
-### 2. Configure project id
+Create a project and enable: **Authentication** (Email/Password), **Firestore**, **Functions**, **Hosting**, **Scheduler** (Blaze plan for scheduled functions).
 
-Edit `.firebaserc`:
-- replace `your-firebase-project-id`
+### 2. Project ID
 
-### 3. Configure environment variables
+Edit `.firebaserc` and set `default.project` to your Firebase project ID.
 
-Copy `.env.example` values:
-- Vite `VITE_FIREBASE_*`
-- optional `NASCAR_PROVIDER_BASE_URL` and `NASCAR_PROVIDER_TOKEN`
+### 3. Environment variables
+
+```bash
+npm run setup:env   # copies .env.example → .env if missing
+```
+
+Edit `.env` in the repo root and set the `VITE_FIREBASE_*` values from Firebase Console → Project settings → Your apps (web). Optional: `NASCAR_PROVIDER_BASE_URL` and `NASCAR_PROVIDER_TOKEN` for a custom data provider (see [docs/provider-adapter.md](docs/provider-adapter.md)).
 
 ### 4. Install and build
 
@@ -146,27 +142,41 @@ npm run build --workspaces
 ### 5. Deploy
 
 ```bash
-firebase deploy
+npm run deploy
+# or: firebase deploy
 ```
 
-## Minimal Admin Onboarding (Set-and-Forget)
+### 6. Local web dev
 
-1. Open web app and sign in.
-2. Create league once (`Create League` form).
-3. Share invite code with players.
-4. Click `Refresh Data Now` once to seed schedule/standings.
-5. Weekly routine:
-   - Verify picks monitor before lock.
-   - After race, verify scores.
-   - Only use manual override if provider data is missing/wrong.
+```bash
+cd web && npm run dev
+```
 
-For penalties/corrections:
-- Use `Add Penalty / Correction`.
-- Weekly and season totals update automatically.
-- Adjusted picks are tagged in UI.
+## Admin onboarding
+
+See [docs/admin-onboarding.md](docs/admin-onboarding.md). Summary:
+
+1. Sign in to the web app → Create league → Share invite code.
+2. Click **Refresh Data Now** once to seed schedule and standings.
+3. Weekly: check Pick Monitoring before lock; after the race, verify scores. Use **Add Penalty / Correction** when needed; totals and ranks update automatically.
+
+## Documentation
+
+| Doc | Description |
+|-----|-------------|
+| [docs/README.md](docs/README.md) | Index of all documentation |
+| [docs/setup-checklist.md](docs/setup-checklist.md) | Full setup and deploy steps |
+| [docs/GETTING-FULLY-WORKING.md](docs/GETTING-FULLY-WORKING.md) | Zero-to-playable 2026 league (no external provider) |
+| [docs/admin-onboarding.md](docs/admin-onboarding.md) | Admin workflow and weekly routine |
+| [docs/provider-adapter.md](docs/provider-adapter.md) | NASCAR data provider contract |
+| [docs/race-results-sources.md](docs/race-results-sources.md) | Standings/results URLs (NASCAR.com, ESPN) |
+| [docs/index-setup.md](docs/index-setup.md) | Firestore composite index setup |
+| [docs/add-members-userid-index.md](docs/add-members-userid-index.md) | Collection group index on members by userId |
+| [docs/firestore-rules-review.md](docs/firestore-rules-review.md) | Firestore security rules review |
+| [STYLEGUIDE.md](STYLEGUIDE.md) | UI and code style for web/iOS |
 
 ## Notes
 
 - Security rules enforce player/admin boundaries and post-lock edit prevention.
 - With ~20 users, full re-score and rank recomputation is inexpensive and reliable.
-- Scheduled re-check catches delayed post-race penalties as long as provider reflects them.
+- Scheduled re-check catches delayed post-race penalties as long as the provider reflects them.

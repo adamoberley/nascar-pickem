@@ -4,6 +4,8 @@ import {
   doc,
   getDoc,
   getDocs,
+  query,
+  where,
   type DocumentData,
   type QueryDocumentSnapshot,
   updateDoc,
@@ -23,31 +25,41 @@ function dataFromDoc<T>(snapshot: QueryDocumentSnapshot<DocumentData>): T {
 }
 
 export async function loadMemberships(userId: string): Promise<Membership[]> {
-  const membershipsSnap = await getDocs(collectionGroup(db, "members"));
+  try {
+    const membershipsSnap = await getDocs(
+      query(
+        collectionGroup(db, "members"),
+        where("userId", "==", userId)
+      )
+    );
 
-  const memberships = await Promise.all(
-    membershipsSnap.docs
-      .filter((memberDocSnap) => memberDocSnap.id === userId)
-      .map(async (memberDocSnap) => {
-      const leagueId = memberDocSnap.ref.parent.parent?.id;
-      if (!leagueId) {
-        return null;
-      }
+    const userMemberDocs = membershipsSnap.docs;
 
-      const leagueSnap = await getDoc(doc(db, "leagues", leagueId));
-      if (!leagueSnap.exists()) {
-        return null;
-      }
+    const memberships = await Promise.all(
+      userMemberDocs.map(async (memberDocSnap) => {
+        const leagueId = memberDocSnap.ref.parent.parent?.id;
+        if (!leagueId) return null;
 
-      return {
-        leagueId,
-        league: leagueSnap.data() as LeagueDoc,
-        member: dataFromDoc<MemberDoc>(memberDocSnap),
-      };
-    }),
-  );
+        try {
+          const leagueSnap = await getDoc(doc(db, "leagues", leagueId));
+          if (!leagueSnap.exists()) return null;
 
-  return memberships.filter((membership): membership is Membership => membership !== null);
+          return {
+            leagueId,
+            league: leagueSnap.data() as LeagueDoc,
+            member: dataFromDoc<MemberDoc>(memberDocSnap),
+          };
+        } catch {
+          // If we can't read the league (e.g., permission denied), skip it
+          return null;
+        }
+      }),
+    );
+
+    return memberships.filter((membership): membership is Membership => membership !== null);
+  } catch (error) {
+    throw error;
+  }
 }
 
 export async function createLeague(input: {
@@ -61,13 +73,23 @@ export async function createLeague(input: {
   return result.data as { leagueId: string; inviteCode: string };
 }
 
+export async function getLeaguePreviewByInviteCode(inviteCode: string): Promise<{
+  leagueId: string;
+  name: string;
+  memberNames: string[];
+}> {
+  const fn = httpsCallable(functions, "getLeaguePreviewByInviteCode");
+  const result = await fn({ inviteCode: inviteCode.toUpperCase() });
+  return result.data as { leagueId: string; name: string; memberNames: string[] };
+}
+
 export async function joinLeagueByInvite(input: {
   inviteCode: string;
   displayName: string;
-}): Promise<{ leagueId: string }> {
+}): Promise<{ leagueId: string; displayName: string }> {
   const fn = httpsCallable(functions, "joinLeagueByInvite");
   const result = await fn(input);
-  return result.data as { leagueId: string };
+  return result.data as { leagueId: string; displayName: string };
 }
 
 export async function savePick(input: {

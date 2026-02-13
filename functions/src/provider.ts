@@ -5,6 +5,9 @@ import type {
   ProviderRaceResult,
   RaceStatus,
 } from "./types";
+import schedule2026 from "./schedule-2026.json";
+import standings2026 from "./standings-2026.json";
+import result2026CookOutClash from "./results-2026-cook-out-clash.json";
 
 export interface NascarDataProvider {
   readonly name: string;
@@ -61,6 +64,9 @@ class StaticFallbackProvider implements NascarDataProvider {
   readonly name = "static-fallback-provider";
 
   async fetchSchedule(seasonYear: number): Promise<ProviderRace[]> {
+    if (seasonYear === 2026) {
+      return schedule2026 as ProviderRace[];
+    }
     return [
       {
         id: `${seasonYear}-daytona-500`,
@@ -89,14 +95,20 @@ class StaticFallbackProvider implements NascarDataProvider {
     ];
   }
 
-  async fetchStandings(_seasonYear: number): Promise<ProviderDriverStanding[]> {
+  async fetchStandings(seasonYear: number): Promise<ProviderDriverStanding[]> {
+    if (seasonYear === 2026) {
+      return standings2026 as ProviderDriverStanding[];
+    }
     return [];
   }
 
   async fetchRaceResult(
     raceKey: string,
-    _seasonYear: number,
+    seasonYear: number,
   ): Promise<ProviderRaceResult | null> {
+    if (seasonYear === 2026 && raceKey === "2026-cook-out-clash") {
+      return result2026CookOutClash as ProviderRaceResult;
+    }
     return {
       raceKey,
       status: "completed",

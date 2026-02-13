@@ -2,6 +2,8 @@
 
 The ingestion layer uses `NascarDataProvider` (`functions/src/provider.ts`).
 
+For public URLs and patterns used by NASCAR.com and ESPN for **standings** and **race results**, see [race-results-sources.md](./race-results-sources.md).
+
 ## Required Methods
 
 - `fetchSchedule(seasonYear)`

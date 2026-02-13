@@ -12,14 +12,34 @@ import type { MemberDoc } from "./types";
 let _db: Firestore | null = null;
 function getDb(): Firestore {
   if (!_db) {
-    if (getApps().length === 0) initializeApp();
-    _db = getFirestore();
+    // Ensure Firebase Admin is initialized - use default credentials from environment
+    let app;
+    const apps = getApps();
+    if (apps.length === 0) {
+      // Initialize with default credentials (Cloud Functions provides these automatically)
+      app = initializeApp();
+    } else {
+      app = apps[0];
+    }
+    // Get Firestore instance - explicitly use the app to avoid timing issues
+    _db = getFirestore(app);
+    if (!_db) {
+      throw new Error("Failed to get Firestore instance - ensure Firebase Admin is initialized");
+    }
   }
   return _db;
 }
+
+// Create a Proxy that lazily initializes Firestore only when accessed
 export const db: Firestore = new Proxy({} as Firestore, {
   get(_, prop) {
-    return (getDb() as Record<string | symbol, unknown>)[prop];
+    const dbInstance = getDb();
+    const value = (dbInstance as Record<string | symbol, unknown>)[prop];
+    // Bind methods to the db instance to preserve 'this' context
+    if (typeof value === "function") {
+      return value.bind(dbInstance);
+    }
+    return value;
   },
 });
 

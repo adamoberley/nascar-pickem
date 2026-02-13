@@ -23,6 +23,14 @@ struct LeagueSummary: Identifiable {
     let seasonYear: Int
     let inviteCode: String
     let payoutConfigText: String
+    let memberNames: [String]
+}
+
+/// Preview of a league by invite code (for join flow name picker).
+struct LeaguePreview {
+    let leagueId: String
+    let name: String
+    let memberNames: [String]
 }
 
 struct LeagueMember: Identifiable {
@@ -40,6 +48,7 @@ struct RaceItem: Identifiable {
     let startTime: Date
     let lockTime: Date
     let status: RaceStatus
+    let tvChannel: String?
 }
 
 struct DriverItem: Identifiable {
@@ -55,7 +64,7 @@ struct TierItem {
     let tierC: [String]
 }
 
-struct PickItem {
+struct PickItem: Equatable {
     let raceId: String
     let userId: String
     let tierA: [String]
@@ -86,6 +95,15 @@ struct SeasonScoreItem: Identifiable {
     let id: String
     let seasonTotal: Int
     let rank: Int
+}
+
+/// A row in the merged standings (real members + member names not yet joined).
+struct StandingsRowItem: Identifiable {
+    let id: String
+    let displayName: String
+    let seasonTotal: Int
+    let rank: Int
+    let isPlaceholder: Bool
 }
 
 extension Dictionary where Key == String, Value == Any {

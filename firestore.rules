@@ -10,7 +10,9 @@ service cloud.firestore {
     }
 
     function isMember(leagueId) {
-      return isSignedIn() && exists(memberPath(leagueId));
+      return isSignedIn() && 
+        exists(memberPath(leagueId)) &&
+        get(memberPath(leagueId)).data != null;
     }
 
     function isAdmin(leagueId) {
@@ -46,6 +48,16 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read, write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Collection group query rule for members - allows users to read their own member documents
+    // Supports querying by userId field (for collection group queries) or document ID (for direct access)
+    // For collection group queries: checks if userId field matches authenticated user
+    // For direct access: checks if document ID matches authenticated user
+    match /{path=**}/members/{memberDocId} {
+      allow read: if isSignedIn() && 
+        (request.auth.uid == memberDocId || 
+         (resource != null && resource.data.get("userId", "") == request.auth.uid));
     }
 
     match /leagues/{leagueId} {

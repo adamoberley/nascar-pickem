@@ -1,4 +1,4 @@
-import { logger } from "firebase-functions";
+import { logger } from "firebase-functions/v2";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
@@ -78,97 +78,199 @@ function validatePickAgainstTiers(
   );
 }
 
-export const createLeague = onCall(async (request) => {
-  const userId = requireAuthUid(request.auth?.uid);
-  const leagueName = requireString(request.data?.name, "name");
-  const inviteCodeRaw = requireString(request.data?.inviteCode, "inviteCode");
-  const seasonYear = requireNumber(request.data?.seasonYear, "seasonYear");
-  const adminDisplayName =
-    typeof request.auth?.token?.name === "string"
-      ? request.auth.token.name
-      : typeof request.auth?.token?.email === "string"
-        ? request.auth.token.email
-        : "League Admin";
-  const payoutConfigText =
-    typeof request.data?.payoutConfigText === "string"
-      ? request.data.payoutConfigText.trim()
-      : "";
+export const createLeague = onCall({ invoker: "public" }, async (request) => {
+  try {
+    const userId = requireAuthUid(request.auth?.uid);
+    logger.info("createLeague called", { userId });
+    
+    const leagueName = requireString(request.data?.name, "name");
+    const inviteCodeRaw = requireString(request.data?.inviteCode, "inviteCode");
+    const seasonYear = requireNumber(request.data?.seasonYear, "seasonYear");
+    const adminDisplayName =
+      typeof request.auth?.token?.name === "string"
+        ? request.auth.token.name
+        : typeof request.auth?.token?.email === "string"
+          ? request.auth.token.email
+          : "League Admin";
+    const payoutConfigText =
+      typeof request.data?.payoutConfigText === "string"
+        ? request.data.payoutConfigText.trim()
+        : "";
+    const memberNames =
+      Array.isArray(request.data?.memberNames) &&
+      request.data.memberNames.every((x: unknown) => typeof x === "string")
+        ? (request.data.memberNames as string[])
+        : Array.isArray(request.data?.expectedMemberNames) &&
+            request.data.expectedMemberNames.every((x: unknown) => typeof x === "string")
+          ? (request.data.expectedMemberNames as string[])
+          : undefined;
 
-  const inviteCode = inviteCodeRaw.toUpperCase();
-  const existingLeague = await db
-    .collection("leagues")
-    .where("inviteCode", "==", inviteCode)
-    .limit(1)
-    .get();
+    const inviteCode = inviteCodeRaw.toUpperCase();
+    logger.info("Checking for existing league with invite code", { inviteCode });
+    
+    const existingLeague = await db
+      .collection("leagues")
+      .where("inviteCode", "==", inviteCode)
+      .limit(1)
+      .get();
 
-  if (!existingLeague.empty) {
-    throw new HttpsError("already-exists", "Invite code is already in use.");
-  }
+    if (!existingLeague.empty) {
+      throw new HttpsError("already-exists", "Invite code is already in use.");
+    }
 
-  const leagueDocRef = db.collection("leagues").doc();
+    const leagueDocRef = db.collection("leagues").doc();
+    logger.info("Creating league document", { leagueId: leagueDocRef.id });
 
-  await leagueDocRef.set({
-    name: leagueName,
-    seasonYear,
-    inviteCode,
-    payoutConfigText,
-    lockBehavior: "race_start",
-    createdAt: nowTimestamp(),
-  });
+    await leagueDocRef.set({
+      name: leagueName,
+      seasonYear,
+      inviteCode,
+      payoutConfigText,
+      ...(memberNames?.length ? { memberNames } : {}),
+      lockBehavior: "race_start",
+      createdAt: nowTimestamp(),
+    });
+    logger.info("League document created successfully");
 
-  await membersRef(leagueDocRef.id).doc(userId).set({
-    displayName: adminDisplayName,
-    role: "admin",
-    paidStatus: "paid",
-    joinedAt: nowTimestamp(),
-  } satisfies MemberDoc);
-
-  return {
-    leagueId: leagueDocRef.id,
-    inviteCode,
-  };
-});
-
-export const joinLeagueByInvite = onCall(async (request) => {
-  const userId = requireAuthUid(request.auth?.uid);
-  const inviteCode = requireString(request.data?.inviteCode, "inviteCode").toUpperCase();
-  const displayName = requireString(request.data?.displayName, "displayName");
-
-  const leagueSnap = await db
-    .collection("leagues")
-    .where("inviteCode", "==", inviteCode)
-    .limit(1)
-    .get();
-
-  if (leagueSnap.empty) {
-    throw new HttpsError("not-found", "Invite code not found.");
-  }
-
-  const leagueId = leagueSnap.docs[0].id;
-  const memberDocRef = membersRef(leagueId).doc(userId);
-  const memberDoc = await memberDocRef.get();
-
-  if (!memberDoc.exists) {
-    await memberDocRef.set({
-      displayName,
-      role: "player",
-      paidStatus: "unpaid",
+    logger.info("Creating member document", { leagueId: leagueDocRef.id, userId });
+    await membersRef(leagueDocRef.id).doc(userId).set({
+      userId, // Store userId as field to enable collection group queries
+      displayName: adminDisplayName,
+      role: "admin",
+      paidStatus: "paid",
       joinedAt: nowTimestamp(),
     } satisfies MemberDoc);
+    logger.info("Member document created with userId field", { leagueId: leagueDocRef.id, userId });
+    logger.info("Member document created successfully");
+
+    return {
+      leagueId: leagueDocRef.id,
+      inviteCode,
+    };
+  } catch (error) {
+    logger.error("Error in createLeague", { error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined });
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    throw new HttpsError("internal", `Failed to create league: ${error instanceof Error ? error.message : String(error)}`);
   }
-
-  await db.collection("users").doc(userId).set(
-    {
-      displayName,
-      updatedAt: nowTimestamp(),
-    },
-    { merge: true },
-  );
-
-  return { leagueId };
 });
 
-export const savePick = onCall(async (request) => {
+/** Returns league name and member names for the join flow (auth required). */
+export const getLeaguePreviewByInviteCode = onCall({ invoker: "public" }, async (request) => {
+  try {
+    requireAuthUid(request.auth?.uid);
+    const inviteCode = requireString(request.data?.inviteCode, "inviteCode").toUpperCase();
+    const leagueSnap = await db
+      .collection("leagues")
+      .where("inviteCode", "==", inviteCode)
+      .limit(1)
+      .get();
+    if (leagueSnap.empty) {
+      throw new HttpsError("not-found", "Invite code not found.");
+    }
+    const league = leagueSnap.docs[0].data();
+    const memberNames = (league.memberNames as string[] | undefined) ?? (league.expectedMemberNames as string[] | undefined) ?? [];
+    return {
+      leagueId: leagueSnap.docs[0].id,
+      name: league.name as string,
+      memberNames,
+    };
+  } catch (error) {
+    if (error instanceof HttpsError) throw error;
+    throw new HttpsError("internal", String(error));
+  }
+});
+
+export const joinLeagueByInvite = onCall({ invoker: "public" }, async (request) => {
+  try {
+    const userId = requireAuthUid(request.auth?.uid);
+    logger.info("joinLeagueByInvite called", { userId });
+
+    const inviteCode = requireString(request.data?.inviteCode, "inviteCode").toUpperCase();
+    const clientDisplayName = requireString(request.data?.displayName, "displayName");
+
+    logger.info("Looking up league by invite code", { inviteCode });
+    const leagueSnap = await db
+      .collection("leagues")
+      .where("inviteCode", "==", inviteCode)
+      .limit(1)
+      .get();
+
+    if (leagueSnap.empty) {
+      throw new HttpsError("not-found", "Invite code not found.");
+    }
+
+    const leagueDoc = leagueSnap.docs[0];
+    const leagueId = leagueDoc.id;
+    const leagueData = leagueDoc.data();
+    const memberNames = (leagueData.memberNames as string[] | undefined) ?? (leagueData.expectedMemberNames as string[] | undefined) ?? [];
+    logger.info("League found", { leagueId, memberNamesCount: memberNames.length });
+
+    const memberDocRef = membersRef(leagueId).doc(userId);
+    const memberDoc = await memberDocRef.get();
+
+    let displayName = clientDisplayName.trim();
+
+    if (!memberDoc.exists) {
+      // Only assign an unused member name when the user didn't provide a real name (empty or same as email).
+      // Otherwise honor their choice (including misspellings or a name already taken).
+      const userEmail = typeof request.auth?.token?.email === "string" ? request.auth.token.email : "";
+      const looksLikeNonChoice = !displayName || (userEmail !== "" && displayName === userEmail);
+      if (looksLikeNonChoice && memberNames.length > 0) {
+        const membersSnap = await membersRef(leagueId).get();
+        const usedDisplayNames = new Set(
+          membersSnap.docs.map((d) => (d.data() as MemberDoc).displayName),
+        );
+        const firstUnused = memberNames.find((name) => !usedDisplayNames.has(name));
+        if (firstUnused) {
+          displayName = firstUnused;
+          logger.info("Assigned unused member name (no name provided)", {
+            leagueId,
+            userId,
+            assignedName: firstUnused,
+          });
+        }
+      }
+      if (!displayName) {
+        displayName = userEmail || "Player";
+      }
+
+      logger.info("Creating member document", { leagueId, userId, displayName });
+      await memberDocRef.set({
+        userId, // Store userId as field to enable collection group queries
+        displayName,
+        role: "player",
+        paidStatus: "unpaid",
+        joinedAt: nowTimestamp(),
+      } satisfies MemberDoc);
+      logger.info("Member document created successfully");
+    } else {
+      logger.info("User already a member", { leagueId, userId });
+      displayName = (memberDoc.data() as MemberDoc).displayName;
+    }
+
+    logger.info("Updating user document", { userId });
+    await db.collection("users").doc(userId).set(
+      {
+        displayName,
+        updatedAt: nowTimestamp(),
+      },
+      { merge: true },
+    );
+    logger.info("User document updated successfully");
+
+    return { leagueId, displayName };
+  } catch (error) {
+    logger.error("Error in joinLeagueByInvite", { error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined });
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    throw new HttpsError("internal", `Failed to join league: ${error instanceof Error ? error.message : String(error)}`);
+  }
+});
+
+export const savePick = onCall({ invoker: "public" }, async (request) => {
   const userId = requireAuthUid(request.auth?.uid);
   const leagueId = requireString(request.data?.leagueId, "leagueId");
   const raceId = requireString(request.data?.raceId, "raceId");
@@ -184,8 +286,13 @@ export const savePick = onCall(async (request) => {
     throw new HttpsError("not-found", "Race not found.");
   }
 
+  let tierSnapFinal = tierSnap;
   if (!tierSnap.exists) {
-    throw new HttpsError("failed-precondition", "Tiers are not available for this race yet.");
+    await computeTiersForRace(leagueId, raceId);
+    tierSnapFinal = await leagueRef(leagueId).collection("tiers").doc(raceId).get();
+  }
+  if (!tierSnapFinal.exists) {
+    throw new HttpsError("failed-precondition", "Tiers are not available for this race yet. Run \"Refresh data\" in Admin.");
   }
 
   const race = raceSnap.data() as RaceDoc;
@@ -199,7 +306,7 @@ export const savePick = onCall(async (request) => {
     tierC: requireStringArray(request.data?.tierC, "tierC", 1),
   };
 
-  validatePickAgainstTiers(selection, tierSnap.data() as TierDoc);
+  validatePickAgainstTiers(selection, tierSnapFinal.data() as TierDoc);
 
   const pick: PickDoc = {
     raceId,
@@ -214,7 +321,7 @@ export const savePick = onCall(async (request) => {
   return { ok: true };
 });
 
-export const computeRaceTiers = onCall(async (request) => {
+export const computeRaceTiers = onCall({ invoker: "public" }, async (request) => {
   const userId = requireAuthUid(request.auth?.uid);
   const leagueId = requireString(request.data?.leagueId, "leagueId");
   const raceId = requireString(request.data?.raceId, "raceId");
@@ -225,7 +332,7 @@ export const computeRaceTiers = onCall(async (request) => {
   return { ok: true };
 });
 
-export const manualRefreshData = onCall(async (request) => {
+export const manualRefreshData = onCall({ invoker: "public" }, async (request) => {
   const userId = requireAuthUid(request.auth?.uid);
   const leagueId = requireString(request.data?.leagueId, "leagueId");
 
@@ -236,7 +343,7 @@ export const manualRefreshData = onCall(async (request) => {
   return { ok: true };
 });
 
-export const manualUpsertRacePoints = onCall(async (request) => {
+export const manualUpsertRacePoints = onCall({ invoker: "public" }, async (request) => {
   const userId = requireAuthUid(request.auth?.uid);
   const leagueId = requireString(request.data?.leagueId, "leagueId");
   const raceId = requireString(request.data?.raceId, "raceId");
@@ -279,7 +386,7 @@ export const manualUpsertRacePoints = onCall(async (request) => {
   return { ok: true };
 });
 
-export const addAdjustment = onCall(async (request) => {
+export const addAdjustment = onCall({ invoker: "public" }, async (request) => {
   const userId = requireAuthUid(request.auth?.uid);
   const leagueId = requireString(request.data?.leagueId, "leagueId");
   await assertAdminInLeague(leagueId, userId);
@@ -456,27 +563,5 @@ export const onWeeklyScoreWrite = onDocumentWritten(
     }
 
     await recomputeSeasonScores(event.params.leagueId);
-  },
-);
-
-export const pruneSeasonScores = onSchedule(
-  {
-    schedule: "every 24 hours",
-    timeZone: "America/New_York",
-  },
-  async () => {
-    const leagueIds = await getLeagueIds();
-    for (const leagueId of leagueIds) {
-      const membersSnap = await membersRef(leagueId).get();
-      const memberIds = new Set(membersSnap.docs.map((doc) => doc.id));
-      const seasonScoresSnap = await seasonScoresRef(leagueId).get();
-      const deletes: Promise<FirebaseFirestore.WriteResult>[] = [];
-      seasonScoresSnap.forEach((scoreDoc) => {
-        if (!memberIds.has(scoreDoc.id)) {
-          deletes.push(seasonScoresRef(leagueId).doc(scoreDoc.id).delete());
-        }
-      });
-      await Promise.all(deletes);
-    }
   },
 );

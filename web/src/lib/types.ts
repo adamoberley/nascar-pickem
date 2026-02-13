@@ -9,6 +9,9 @@ export interface LeagueDoc {
   seasonYear: number;
   inviteCode: string;
   payoutConfigText?: string;
+  memberNames?: string[];
+  /** @deprecated Use memberNames. Kept for reading existing leagues. */
+  expectedMemberNames?: string[];
   lockBehavior?: "race_start";
 }
 
@@ -27,12 +30,24 @@ export interface RaceDoc {
   lockTime: Timestamp;
   status: RaceStatus;
   providerRaceKey?: string;
+  tvChannel?: string;
 }
 
 export interface DriverDoc {
   name: string;
   number: string;
   team: string;
+}
+
+export interface StandingEntry {
+  driverId: string;
+  position: number;
+}
+
+export interface StandingsSnapshotDoc {
+  asOfDate: import("firebase/firestore").Timestamp;
+  weekIndex: number;
+  drivers: StandingEntry[];
 }
 
 export interface TierDoc {

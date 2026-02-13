@@ -16,24 +16,30 @@ final class PlayerViewModel: ObservableObject {
 
     @Published var seasonScores: [SeasonScoreItem] = []
     @Published var members: [LeagueMember] = []
-    @Published var selectedStandingsMemberId: String?
-    @Published var selectedMemberWeeklyScores: [WeeklyScoreItem] = []
+    @Published var allWeeklyScores: [WeeklyScoreItem] = []
 
     @Published var selectedRaceId: String?
     @Published var selectedRacePoints: [(String, Int)] = []
     @Published var selectedRaceScore: WeeklyScoreItem?
+    @Published var selectedRacePick: PickItem?
 
     @Published var isLoading = false
+    @Published var isSavingPick = false
     @Published var errorMessage: String?
     @Published var statusMessage: String?
+
+    /// League member names for the join flow (from league preview).
+    @Published var memberNamesForJoin: [String] = []
+    @Published var leaguePreviewLoadingForJoin = false
 
     private let repository = LeagueRepository.shared
     private var listeners: [ListenerRegistration] = []
     private var tierListener: ListenerRegistration?
     private var pickListener: ListenerRegistration?
-    private var standingsListener: ListenerRegistration?
+    private var allWeeklyScoresListener: ListenerRegistration?
     private var racePointsListener: ListenerRegistration?
     private var raceScoreListener: ListenerRegistration?
+    private var selectedRacePickListener: ListenerRegistration?
 
     var currentUserId: String? {
         Auth.auth().currentUser?.uid
@@ -123,21 +129,42 @@ final class PlayerViewModel: ObservableObject {
         })
 
         listeners.append(repository.observeMembers(leagueId: leagueId) { [weak self] members in
-            guard let self else { return }
-            self.members = members
-            if self.selectedStandingsMemberId == nil {
-                self.selectedStandingsMemberId = members.first?.id
-                self.observeSelectedStandingsMember()
-            }
+            self?.members = members
         })
 
         listeners.append(repository.observeSeasonScores(leagueId: leagueId) { [weak self] scores in
             self?.seasonScores = scores
         })
 
+        allWeeklyScoresListener = repository.observeAllWeeklyScores(leagueId: leagueId) { [weak self] scores in
+            self?.allWeeklyScores = scores
+        }
+
         observeTierAndPick()
-        observeSelectedStandingsMember()
         observeSelectedRaceDetails()
+    }
+
+    /// Fetches league preview (member names) for the join flow when user enters invite code.
+    func fetchLeaguePreviewForJoin(inviteCode: String) {
+        let code = inviteCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+        if code.count < 2 {
+            memberNamesForJoin = []
+            leaguePreviewLoadingForJoin = false
+            return
+        }
+        leaguePreviewLoadingForJoin = true
+        repository.getLeaguePreview(inviteCode: code) { [weak self] result in
+            Task { @MainActor in
+                guard let self else { return }
+                self.leaguePreviewLoadingForJoin = false
+                switch result {
+                case .success(let preview):
+                    self.memberNamesForJoin = preview.memberNames
+                case .failure:
+                    self.memberNamesForJoin = []
+                }
+            }
+        }
     }
 
     func joinLeague(inviteCode: String, displayName: String) {
@@ -148,7 +175,9 @@ final class PlayerViewModel: ObservableObject {
             switch result {
             case .success:
                 self.statusMessage = "Joined league successfully."
-                self.loadMemberships()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                    self.loadMemberships()
+                }
             case .failure(let error):
                 self.errorMessage = error.localizedDescription
             }
@@ -175,11 +204,6 @@ final class PlayerViewModel: ObservableObject {
         }
     }
 
-    func observeStandingsUser(userId: String) {
-        selectedStandingsMemberId = userId
-        observeSelectedStandingsMember()
-    }
-
     func setSelectedRace(raceId: String) {
         selectedRaceId = raceId
         observeSelectedRaceDetails()
@@ -191,7 +215,7 @@ final class PlayerViewModel: ObservableObject {
             return
         }
 
-        isLoading = true
+        isSavingPick = true
         repository.savePick(
             leagueId: leagueId,
             raceId: raceId,
@@ -200,7 +224,7 @@ final class PlayerViewModel: ObservableObject {
             tierC: tierC
         ) { [weak self] result in
             guard let self else { return }
-            self.isLoading = false
+            self.isSavingPick = false
             switch result {
             case .success:
                 self.statusMessage = "Picks saved."
@@ -236,29 +260,18 @@ final class PlayerViewModel: ObservableObject {
         }
     }
 
-    private func observeSelectedStandingsMember() {
-        standingsListener?.remove()
-        standingsListener = nil
-
-        guard let leagueId = selectedLeague?.id,
-              let selectedStandingsMemberId else {
-            return
-        }
-
-        standingsListener = repository.observeWeeklyScores(leagueId: leagueId, userId: selectedStandingsMemberId) { [weak self] scores in
-            self?.selectedMemberWeeklyScores = scores
-        }
-    }
-
     private func observeSelectedRaceDetails() {
         racePointsListener?.remove()
         raceScoreListener?.remove()
+        selectedRacePickListener?.remove()
         racePointsListener = nil
         raceScoreListener = nil
+        selectedRacePickListener = nil
 
         guard let leagueId = selectedLeague?.id,
               let raceId = selectedRaceId,
               let userId = currentUserId else {
+            selectedRacePick = nil
             return
         }
 
@@ -269,6 +282,10 @@ final class PlayerViewModel: ObservableObject {
         raceScoreListener = repository.observeWeeklyScore(leagueId: leagueId, raceId: raceId, userId: userId) { [weak self] score in
             self?.selectedRaceScore = score
         }
+
+        selectedRacePickListener = repository.observePick(leagueId: leagueId, raceId: raceId, userId: userId) { [weak self] pick in
+            self?.selectedRacePick = pick
+        }
     }
 
     private func clearListeners() {
@@ -276,13 +293,15 @@ final class PlayerViewModel: ObservableObject {
         listeners.removeAll()
         tierListener?.remove()
         pickListener?.remove()
-        standingsListener?.remove()
+        allWeeklyScoresListener?.remove()
         racePointsListener?.remove()
         raceScoreListener?.remove()
+        selectedRacePickListener?.remove()
         tierListener = nil
         pickListener = nil
-        standingsListener = nil
+        allWeeklyScoresListener = nil
         racePointsListener = nil
         raceScoreListener = nil
+        selectedRacePickListener = nil
     }
 }

@@ -8,11 +8,14 @@ export interface LeagueDoc {
   seasonYear: number;
   inviteCode: string;
   payoutConfigText?: string;
+  /** League member names (shown in join flow and standings until they sign up). */
+  memberNames?: string[];
   createdAt: FirebaseFirestore.Timestamp;
   lockBehavior?: "race_start";
 }
 
 export interface MemberDoc {
+  userId: string; // Store userId as field to enable collection group queries
   displayName: string;
   role: MemberRole;
   paidStatus: PaidStatus;
@@ -28,6 +31,7 @@ export interface RaceDoc {
   status: RaceStatus;
   providerRaceKey?: string;
   lastSyncedAt?: FirebaseFirestore.Timestamp;
+  tvChannel?: string;
 }
 
 export interface DriverDoc {

@@ -40,6 +40,34 @@ Functions use **esbuild** for the build (fast); type-checking is still `npm run 
 npm run deploy
 ```
 
+Callable functions use `invoker: "public"` so the Cloud Run service allows client invocation; auth is still enforced inside each function (e.g. `requireAuthUid`, `assertAdminInLeague`). If you see "Missing or insufficient permissions" when creating a league or calling other callables, redeploy functions so the invoker IAM is applied.
+
+**If you get "internal" error with "missing permissions" when creating a league:**
+
+This usually means the Cloud Functions service account doesn't have Firestore permissions. For Firebase Functions v2 (Cloud Run), the service account is the **default compute service account**: `PROJECT_NUMBER-compute@developer.gserviceaccount.com`
+
+Fix it:
+
+1. **Grant Firestore permissions**:
+   - Go to [Google Cloud Console IAM](https://console.cloud.google.com/iam-admin/iam?project=nascar-pick-em)
+   - Find the service account: `422638449752-compute@developer.gserviceaccount.com` (Default compute service account)
+   - Click Edit (pencil icon)
+   - Click "Add Another Role"
+   - Add role: **Cloud Datastore User** (`roles/datastore.user`)
+   - Save
+2. **Redeploy functions**: `npm run deploy` (or `firebase deploy --only functions`)
+
+Alternatively, grant the role via gcloud:
+```bash
+gcloud projects add-iam-policy-binding nascar-pick-em \
+  --member="serviceAccount:422638449752-compute@developer.gserviceaccount.com" \
+  --role="roles/datastore.user"
+```
+
+**Note:** The Editor role should include Firestore permissions, but sometimes the explicit `roles/datastore.user` role is needed for Cloud Run-based functions.
+
+**Note:** You don't need to set your user account as admin - the `createLeague` function automatically makes you an admin when you create a league.
+
 If deploy times out during "Loading and analyzing source code" for functions:
 
 - **Stub entry:** Functions use a discovery-only entry (`lib/index.js`); the heavy bundle loads only when an export is accessed. Try deploy again.

@@ -21,7 +21,6 @@ const FUNCTION_NAMES = [
   "onAdjustmentWrite",
   "onPickWrite",
   "onWeeklyScoreWrite",
-  "pruneSeasonScores",
 ];
 
 let bundle;

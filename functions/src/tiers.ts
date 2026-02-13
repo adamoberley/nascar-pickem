@@ -1,6 +1,6 @@
 import { logger } from "firebase-functions";
 import { nowTimestamp, racesRef, standingsSnapshotsRef, tiersRef } from "./data";
-import type { StandingsSnapshotDoc } from "./types";
+import type { RaceDoc, StandingsSnapshotDoc } from "./types";
 
 function extractTierDriverIds(snapshot: StandingsSnapshotDoc): {
   tierA: string[];
@@ -59,14 +59,22 @@ export async function computeTiersForRace(
 }
 
 export async function recomputeTiersForUpcomingRaces(leagueId: string): Promise<void> {
-  const raceSnap = await racesRef(leagueId)
-    .where("status", "==", "scheduled")
-    .orderBy("startTime", "asc")
-    .get();
+  // Query without orderBy to avoid requiring a composite index on (status, startTime).
+  const raceSnap = await racesRef(leagueId).where("status", "==", "scheduled").get();
+
+  const sorted = raceSnap.docs
+    .map((d) => ({ id: d.id, data: d.data() as RaceDoc }))
+    .sort((a, b) => a.data.startTime.toMillis() - b.data.startTime.toMillis());
+
+  logger.info("Recomputing tiers for upcoming races", {
+    leagueId,
+    scheduledRaceCount: sorted.length,
+    raceIds: sorted.map((r) => r.id),
+  });
 
   await Promise.all(
-    raceSnap.docs.map(async (raceDoc) => {
-      await computeTiersForRace(leagueId, raceDoc.id);
+    sorted.map(async (race) => {
+      await computeTiersForRace(leagueId, race.id);
     }),
   );
 }

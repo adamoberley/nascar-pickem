@@ -1,72 +1,66 @@
 import SwiftUI
 
 struct PlayerTabView: View {
-    @EnvironmentObject private var sessionStore: SessionStore
-    @EnvironmentObject private var viewModel: PlayerViewModel
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var selectedTab: Int = 0
 
     var body: some View {
-        TabView {
-            HomeView()
+        TabView(selection: $selectedTab) {
+            HomeView(selectedTab: $selectedTab)
                 .tabItem {
                     Label("Home", systemImage: "house.fill")
                 }
+                .tag(0)
 
             PicksView()
                 .tabItem {
                     Label("Picks", systemImage: "checklist")
                 }
+                .tag(1)
 
             StandingsView()
                 .tabItem {
                     Label("Standings", systemImage: "list.number")
                 }
+                .tag(2)
 
             RaceView()
                 .tabItem {
                     Label("Race", systemImage: "flag.checkered")
                 }
+                .tag(3)
         }
-        .overlay(alignment: .top) {
-            leagueHeader
+        .safeAreaInset(edge: .top, spacing: 0) {
+            HeaderView(title: pageName, showLeagueMenu: true)
+                .padding(.horizontal, 14)
+                .padding(.top, 8)
+                .padding(.bottom, 10)
+                .background(alignment: .bottom) {
+                    GeometryReader { geo in
+                        LinearGradient(
+                            colors: [
+                                NASCARTheme.secondarySurface(for: colorScheme)
+                                    .opacity(colorScheme == .dark ? 0.99 : 0.99),
+                                NASCARTheme.secondarySurface(for: colorScheme).opacity(0)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .frame(width: geo.size.width, height: geo.size.height + geo.safeAreaInsets.top + 5)
+                    }
+                    .ignoresSafeArea(edges: .top)
+                }
         }
+        .tint(NASCARTheme.red)
     }
 
-    private var leagueHeader: some View {
-        VStack(spacing: 8) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(viewModel.selectedLeague?.name ?? "NASCAR Pick'Em")
-                        .font(.headline)
-                    Text("Season \(viewModel.selectedLeague?.seasonYear ?? 0)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-
-                Menu {
-                    ForEach(viewModel.memberships.indices, id: \.self) { index in
-                        let pair = viewModel.memberships[index]
-                        Button(pair.0.name) {
-                            viewModel.applyLeagueSelection(leagueId: pair.0.id)
-                        }
-                    }
-
-                    Button("Sign Out", role: .destructive) {
-                        try? sessionStore.signOut()
-                    }
-                } label: {
-                    Image(systemName: "line.3.horizontal.circle")
-                        .font(.title3)
-                }
-            }
-            .padding(.horizontal)
-            .padding(.top, 50)
-            .padding(.bottom, 8)
-            .background(.thinMaterial)
-
-            Spacer()
+    private var pageName: String {
+        switch selectedTab {
+        case 0: return "Home"
+        case 1: return "Picks"
+        case 2: return "Standings"
+        case 3: return "Race"
+        default: return "Home"
         }
-        .ignoresSafeArea()
     }
 }

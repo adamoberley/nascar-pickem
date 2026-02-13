@@ -10,7 +10,9 @@
     "build": "npm run build --workspaces",
     "lint": "npm run lint --workspaces",
     "test": "npm run test --workspaces",
-    "deploy": "NODE_OPTIONS=--max-old-space-size=8192 FUNCTIONS_DISCOVERY_TIMEOUT=120 firebase deploy"
+    "deploy": "firebase deploy",
+    "setup:env": "node scripts/setup-env.js",
+    "predeploy": "npm run build"
   },
   "engines": {
     "node": ">=20"

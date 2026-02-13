@@ -7,12 +7,21 @@ import {
   racePointsRef,
   racesRef,
   standingsSnapshotsRef,
+  tiersRef,
 } from "./data";
 import { getProvider, normalizeRaceStatus } from "./provider";
 import { rescoreRace } from "./scoring";
 import { recomputeTiersForUpcomingRaces } from "./tiers";
 import type { DriverDoc, LeagueDoc, RaceDoc, StandingEntry } from "./types";
 import { toDocId } from "./utils";
+
+/** Races that do not award points; excluded from schedule and tier computation. */
+const NON_POINTS_RACE_IDS = [
+  "2026-cook-out-clash", // Cook Out Clash
+  "2026-duel-1", // America 250 Florida Duel 1
+  "2026-duel-2", // America 250 Florida Duel 2
+  "2026-all-star", // NASCAR All-Star Race
+];
 
 export async function ingestScheduleAndStandings(leagueId: string): Promise<void> {
   const provider = getProvider();
@@ -31,10 +40,14 @@ export async function ingestScheduleAndStandings(leagueId: string): Promise<void
     seasonYear,
   });
 
-  const [schedule, standings] = await Promise.all([
+  const [rawSchedule, standings] = await Promise.all([
     provider.fetchSchedule(seasonYear),
     provider.fetchStandings(seasonYear),
   ]);
+
+  const schedule = rawSchedule.filter(
+    (race) => !NON_POINTS_RACE_IDS.includes(race.id),
+  );
 
   const scheduleWrites: Promise<FirebaseFirestore.WriteResult>[] = [];
   schedule.forEach((race) => {
@@ -59,6 +72,15 @@ export async function ingestScheduleAndStandings(leagueId: string): Promise<void
   });
 
   await Promise.all(scheduleWrites);
+
+  // Remove non-points races from existing leagues so they disappear after refresh
+  const deleteWrites: Promise<FirebaseFirestore.WriteResult>[] = [];
+  for (const raceId of NON_POINTS_RACE_IDS) {
+    const docId = toDocId(raceId);
+    deleteWrites.push(racesRef(leagueId).doc(docId).delete());
+    deleteWrites.push(tiersRef(leagueId).doc(docId).delete());
+  }
+  await Promise.all(deleteWrites);
 
   if (standings.length > 0) {
     const standingsEntries: StandingEntry[] = [];
