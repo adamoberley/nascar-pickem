@@ -61,6 +61,36 @@ Using the same `providerDriverKey` convention for both standings and race result
 
 Race slugs are typically the race name in lowercase with hyphens (e.g. `2026-cook-out-clash-at-bowman-gray-stadium`). Our schedule `providerRaceKey` values (e.g. `2026-cook-out-clash`) can be mapped to these slugs for lookup.
 
+### Live leaderboard & stage results (cf.nascar.com)
+
+- **Main live feed (positions, lap, stage info):** https://cf.nascar.com/live/feeds/live-feed.json  
+  Used for live running order and position-only points. The feed includes `race_id`, `run_id` (e.g. 7), and `stage: { stage_num, finish_at_lap, laps_in_stage }`.
+
+- **Stage results (top 10 per stage, with points):**  
+  **URL pattern:** `https://cf.nascar.com/cacher/{year}/{series_id}/{race_id}/live-stage-points.json`  
+  - `year` = season year (e.g. 2026)  
+  - `series_id` = 1 for Cup  
+  - `race_id` = numeric race id from the main live feed (e.g. 5596)  
+
+  **Example:** https://cf.nascar.com/cacher/2026/1/5596/live-stage-points.json  
+
+  **Response:** JSON array of stage objects, one per completed stage:
+  ```json
+  [
+    {
+      "race_id": 5596,
+      "run_id": 7,
+      "stage_number": 1,
+      "results": [
+        { "position": 1, "vehicle_number": "38", "driver_id": 4272, "full_name": "Zane Smith", "stage_points": 10 },
+        { "position": 2, "vehicle_number": "2", "stage_points": 9 },
+        ...
+      ]
+    }
+  ]
+  ```
+  Top 10 per stage get 10–1 points; all others 0. The backend sums `stage_points` by `vehicle_number` across stages and adds them to position points for live scoring.
+
 ## ESPN Racing Results
 
 ### Season results index

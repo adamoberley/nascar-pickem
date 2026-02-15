@@ -32,6 +32,7 @@
 
 ## Manual Fallbacks
 
-- `Refresh Data Now`
-- `Manual Results / Override`
-- `Add Penalty / Correction`
+- `Refresh Data Now` — Ingest schedule, standings, and results from provider.
+- `Sync Live Race` — During an in-progress race, pull running order from NASCAR.com live feed.
+- `Manual Results / Override` — Override race points when automatic sync fails.
+- `Add Penalty / Correction` — Add adjustments; scores and ranks update automatically.

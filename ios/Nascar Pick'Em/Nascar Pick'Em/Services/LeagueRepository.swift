@@ -551,6 +551,104 @@ final class LeagueRepository {
             }
     }
 
+    /// Observes full race points document (live lap/stage and running positions).
+    func observeRacePointsDocument(
+        leagueId: String,
+        raceId: String,
+        onChange: @escaping (RacePointsDocument) -> Void
+    ) -> ListenerRegistration {
+        db.collection("leagues").document(leagueId).collection("racePoints")
+            .document(raceId)
+            .addSnapshotListener { snapshot, _ in
+                guard let snapshot, let data = snapshot.data() else {
+                    onChange(.empty)
+                    return
+                }
+                let driverMaps = data["drivers"] as? [[String: Any]] ?? []
+                let drivers = driverMaps.map {
+                    RacePointsDriverItem(
+                        driverId: $0["driverId"] as? String ?? "",
+                        basePoints: $0["basePoints"] as? Int ?? 0,
+                        runningPosition: $0["runningPosition"] as? Int
+                    )
+                }
+                let stageMap = data["liveStage"] as? [String: Any]
+                let liveStage: (stageNum: Int, finishAtLap: Int)? = stageMap.flatMap { m in
+                    guard let num = m["stageNum"] as? Int, let lap = m["finishAtLap"] as? Int else { return nil }
+                    return (stageNum: num, finishAtLap: lap)
+                }
+                onChange(RacePointsDocument(
+                    drivers: drivers,
+                    liveLapNumber: data["liveLapNumber"] as? Int,
+                    liveLapsInRace: data["liveLapsInRace"] as? Int,
+                    liveStage: liveStage
+                ))
+            }
+    }
+
+    /// Observes latest standings snapshot (for tier fallback).
+    func observeLatestStandingsSnapshot(
+        leagueId: String,
+        onChange: @escaping (StandingsSnapshotItem?) -> Void
+    ) -> ListenerRegistration {
+        db.collection("leagues").document(leagueId).collection("standingsSnapshots")
+            .order(by: "asOfDate", descending: true)
+            .limit(to: 1)
+            .addSnapshotListener { snapshot, _ in
+                guard let doc = snapshot?.documents.first,
+                      let data = doc.data(),
+                      let driversRaw = data["drivers"] as? [[String: Any]] else {
+                    onChange(nil)
+                    return
+                }
+                let drivers = driversRaw.compactMap { m -> StandingEntryItem? in
+                    guard let driverId = m["driverId"] as? String,
+                          let position = m["position"] as? Int else { return nil }
+                    return StandingEntryItem(driverId: driverId, position: position)
+                }
+                onChange(StandingsSnapshotItem(id: doc.documentID, drivers: drivers))
+            }
+    }
+
+    /// Observes adjustments for a race (for results display).
+    func observeAdjustments(
+        leagueId: String,
+        raceId: String,
+        onChange: @escaping ([AdjustmentItem]) -> Void
+    ) -> ListenerRegistration {
+        db.collection("leagues").document(leagueId).collection("adjustments")
+            .whereField("raceId", isEqualTo: raceId)
+            .addSnapshotListener { snapshot, _ in
+                let items = snapshot?.documents.compactMap { doc -> AdjustmentItem? in
+                    let data = doc.data()
+                    guard let driverId = data["driverId"] as? String,
+                          let delta = data["deltaPoints"] as? Int else { return nil }
+                    return AdjustmentItem(driverId: driverId, deltaPoints: delta)
+                } ?? []
+                onChange(items)
+            }
+    }
+
+    func setLeagueSettings(
+        leagueId: String,
+        name: String,
+        seasonYear: Int,
+        payoutConfigText: String,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        db.collection("leagues").document(leagueId).setData([
+            "name": name,
+            "seasonYear": seasonYear,
+            "payoutConfigText": payoutConfigText,
+        ], merge: true) { error in
+            if let error {
+                completion(.failure(error))
+                return
+            }
+            completion(.success(()))
+        }
+    }
+
     func observeWeeklyScore(
         leagueId: String,
         raceId: String,

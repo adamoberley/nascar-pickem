@@ -13,7 +13,7 @@ struct PicksView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 14) {
-                    if let race = viewModel.upcomingRace {
+                    if let race = viewModel.primaryRace {
                         VStack(alignment: .leading, spacing: 4) {
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(race.name)
@@ -31,10 +31,10 @@ struct PicksView: View {
                         }
                         .appCard()
 
-                        if let tier = viewModel.tier {
-                            tierSection(title: "Tier A", limit: 3, drivers: tier.tierA, selected: tierA, tierColor: NASCARTheme.yellow)
-                            tierSection(title: "Tier B", limit: 2, drivers: tier.tierB, selected: tierB, tierColor: NASCARTheme.red)
-                            tierSection(title: "Tier C", limit: 1, drivers: tier.tierC, selected: tierC, tierColor: NASCARTheme.blue)
+                        if let tier = viewModel.effectiveTier {
+                            tierSection(title: "Tier A", limit: 3, drivers: tier.tierA + tierA.filter { !tier.tierA.contains($0) }, selected: tierA, tierColor: NASCARTheme.yellow, disabled: viewModel.isPickLocked)
+                            tierSection(title: "Tier B", limit: 2, drivers: tier.tierB + tierB.filter { !tier.tierB.contains($0) }, selected: tierB, tierColor: NASCARTheme.red, disabled: viewModel.isPickLocked)
+                            tierSection(title: "Tier C", limit: 1, drivers: tier.tierC + tierC.filter { !tier.tierC.contains($0) }, selected: tierC, tierColor: NASCARTheme.blue, disabled: viewModel.isPickLocked)
 
                             if let localError {
                                 Text(localError)
@@ -57,8 +57,28 @@ struct PicksView: View {
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .appCard(padding: 14)
                             }
+
+                            if viewModel.isPickLocked {
+                                Text("Picks are locked for this race. You can no longer edit them.")
+                                    .font(NASCARTheme.textFont(size: 15))
+                                    .foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .appCard(padding: 14)
+                            } else {
+                                Button {
+                                    viewModel.clearMessages()
+                                    viewModel.savePick(tierA: tierA, tierB: tierB, tierC: tierC)
+                                } label: {
+                                    Text("Save picks")
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 12)
+                                }
+                                .buttonStyle(BrandPrimaryButtonStyle())
+                                .disabled(viewModel.isSavingPick || tierA.count != 3 || tierB.count != 2 || tierC.count != 1 || Set(tierA + tierB + tierC).count != 6)
+                            }
                         } else {
-                            Text("Tiers are not available yet.")
+                            Text("Tiers are not available yet. Run \"Refresh data\" in Admin to load schedule and standings.")
+                                .font(NASCARTheme.textFont(size: 15))
                                 .foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .appCard()
@@ -95,7 +115,8 @@ struct PicksView: View {
         limit: Int,
         drivers: [String],
         selected: [String],
-        tierColor: Color
+        tierColor: Color,
+        disabled: Bool = false
     ) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -112,8 +133,9 @@ struct PicksView: View {
                 ForEach(drivers, id: \.self) { driverId in
                     let driver = viewModel.driversById[driverId]
                     let isSelected = selected.contains(driverId)
+                    let runningPosition = viewModel.driverPositionByDriverId[driverId]
                     Button {
-                        toggle(driverId: driverId, tierTitle: title, limit: limit)
+                        if !disabled { toggle(driverId: driverId, tierTitle: title, limit: limit) }
                     } label: {
                         HStack(spacing: 6) {
                             Text("#\(driver?.number ?? "--") \(driver?.name ?? driverId)")
@@ -140,7 +162,12 @@ struct PicksView: View {
                             )
                         )
                         .overlay(alignment: .trailing) {
-                            if isSelected {
+                            if let pos = runningPosition {
+                                Text("P\(pos)")
+                                    .font(NASCARTheme.textFont(size: 13, weight: .bold))
+                                    .foregroundStyle(tierColor)
+                                    .padding(.trailing, 2)
+                            } else if isSelected {
                                 Image(systemName: "checkmark.circle.fill")
                                     .font(.system(size: 16))
                                     .foregroundStyle(tierColor)
@@ -159,6 +186,7 @@ struct PicksView: View {
                         )
                     }
                     .buttonStyle(.plain)
+                    .disabled(disabled)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

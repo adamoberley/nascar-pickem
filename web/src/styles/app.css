@@ -7,12 +7,16 @@
   src: url("../assets/fonts/RacerItalic.woff2") format("woff2"),
        url("../assets/fonts/RacerItalic.otf") format("opentype");
   font-weight: normal;
-  font-style: italic;
+  font-style: normal; /* Use normal so Safari matches – font glyphs are already italic */
   font-display: swap;
 }
 
 :root {
   color-scheme: light dark;
+
+  --font-body: "Source Sans 3", "Segoe UI", sans-serif;
+  --font-display: "Racer Italic", "Barlow Condensed", "Arial Narrow", sans-serif;
+  --font-display-barlow: "Barlow Condensed", "Arial Narrow", sans-serif;
 
   --nascar-black: #101820;
   --nascar-white: #fafafa;
@@ -59,17 +63,8 @@ body {
   min-height: 100vh;
   color: var(--text);
   line-height: 1.5;
-  background:
-    linear-gradient(180deg, rgb(0 0 0 / 5%), transparent 240px),
-    repeating-linear-gradient(
-      -45deg,
-      rgb(0 0 0 / 3%) 0,
-      rgb(0 0 0 / 3%) 12px,
-      transparent 12px,
-      transparent 24px
-    ),
-    var(--bg);
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  background: var(--bg);
+  font-family: var(--font-body);
 }
 
 h1,
@@ -78,7 +73,7 @@ h3,
 h4,
 h5 {
   margin: 0;
-  font-family: "Racer Italic", "Barlow Condensed", "Arial Narrow", sans-serif;
+  font-family: var(--font-display);
   letter-spacing: 0.025em;
   text-transform: uppercase;
 }
@@ -272,13 +267,29 @@ textarea {
   color: #72e0a8;
 }
 
+.setup-panel .setup-join-button {
+  background: var(--nascar-yellow);
+  color: var(--nascar-black);
+  box-shadow: 0 6px 14px rgb(243 208 62 / 24%);
+}
+
+.sign-out-row {
+  display: flex;
+  justify-content: center;
+}
+
+.sign-out-button {
+  width: auto;
+  min-width: 200px;
+}
+
 .auth-panel h1 {
   color: var(--nascar-white);
   font-size: clamp(2rem, 4vw, 2.6rem);
 }
 
 .auth-kicker {
-  font-family: "Racer Italic", "Barlow Condensed", "Arial Narrow", sans-serif;
+  font-family: var(--font-display);
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: #c4d2e0;
@@ -455,7 +466,8 @@ textarea {
 }
 
 .app-header-title {
-  font-family: "Racer Italic", "Barlow Condensed", "Arial Narrow", sans-serif;
+  width: 160px;
+  font-family: var(--font-display);
   font-size: 1.75rem;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -573,7 +585,7 @@ textarea {
 }
 
 .app-header-dropdown-notes-title {
-  font-family: "Racer Italic", "Barlow Condensed", "Arial Narrow", sans-serif;
+  font-family: var(--font-display);
   font-size: 0.875rem;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -589,12 +601,10 @@ textarea {
   word-break: break-word;
 }
 
-.app-header-dropdown-notes-code {
-  font-family: "Racer Italic", "Barlow Condensed", "Arial Narrow", sans-serif;
-  font-weight: 700;
-  text-transform: uppercase;
+#invite-code,
+#new-invite-code {
+  font-family: var(--font-body);
   letter-spacing: 0.04em;
-  color: var(--text);
 }
 
 .topbar {
@@ -633,9 +643,12 @@ textarea {
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .tabs button {
+  flex-shrink: 0;
   background: transparent;
   color: var(--text);
   border: none;
@@ -655,6 +668,15 @@ textarea {
   color: var(--nascar-white);
   background: var(--nascar-red);
   box-shadow: none !important;
+}
+
+/* Ensure header + tabs stay readable in dark mode (fixes mobile Safari etc.) */
+@media (prefers-color-scheme: dark) {
+  .app-header-strip .app-header-title,
+  .app-header-strip .app-header-menu-btn,
+  .app-header-strip .tabs button:not(.active) {
+    color: #f5f7fa;
+  }
 }
 
 .content-grid {
@@ -703,7 +725,7 @@ textarea {
 }
 
 .section-title {
-  font-family: "Racer Italic", "Barlow Condensed", "Arial Narrow", sans-serif;
+  font-family: var(--font-display);
   font-size: 1.375rem;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -713,7 +735,7 @@ textarea {
 }
 
 .section-title-small {
-  font-family: "Racer Italic", "Barlow Condensed", "Arial Narrow", sans-serif;
+  font-family: var(--font-display);
   font-size: 1.25rem;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -722,7 +744,7 @@ textarea {
 }
 
 .race-name {
-  font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
+  font-family: var(--font-display-barlow);
   font-size: 1.75rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -771,6 +793,30 @@ textarea {
 .your-picks-tiers {
   display: grid;
   gap: 0.6rem;
+}
+
+.your-picks-loading {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.94rem;
+  color: var(--muted);
+  margin: 0;
+}
+
+.your-picks-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgb(255 255 255 / 0.2);
+  border-top-color: var(--nascar-red);
+  border-radius: 50%;
+  animation: your-picks-spin 0.7s linear infinite;
+}
+
+@keyframes your-picks-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .your-picks-empty {
@@ -886,6 +932,37 @@ textarea {
   color: var(--nascar-blue);
 }
 
+.picks-tier-summary-row .picks-tier-position {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  min-width: 1.5rem;
+  text-align: center;
+}
+
+.picks-tier-summary--yellow .picks-tier-position {
+  color: var(--nascar-yellow);
+}
+
+.picks-tier-summary--red .picks-tier-position {
+  color: var(--nascar-red);
+}
+
+.picks-tier-summary--blue .picks-tier-position {
+  color: var(--nascar-blue);
+}
+
+.picks-save-wrap {
+  padding: 0.5rem 0;
+}
+
+.picks-save-button {
+  width: 100%;
+  min-height: 48px;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
 .payout-text,
 .invite-code {
   margin: 0;
@@ -893,7 +970,7 @@ textarea {
 }
 
 .invite-code {
-  font-family: "Racer Italic", "Barlow Condensed", "Arial Narrow", sans-serif;
+  font-family: var(--font-body);
   font-size: 1.5rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -911,6 +988,99 @@ textarea {
 
 .race-card.compact {
   max-width: 560px;
+}
+
+/* Live race (home during race) */
+.race-card--live {
+  position: relative;
+  padding-top: 2rem;
+}
+.live-badge {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.75rem;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--nascar-white);
+  background: var(--nascar-red);
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+}
+.live-leaderboard-link {
+  display: inline-block;
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--nascar-blue);
+  text-decoration: none;
+}
+.live-leaderboard-link:hover {
+  text-decoration: underline;
+}
+.live-driver-points-card .section-title,
+.live-standings-card .section-title {
+  margin-bottom: 0.5rem;
+}
+.live-driver-points-list,
+.live-standings-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.live-driver-points-row,
+.live-standings-row-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--line);
+}
+.live-driver-points-row:last-child,
+.live-standings-row:last-child .live-standings-row-header {
+  border-bottom: none;
+}
+.live-driver-points-name,
+.live-standings-name {
+  font-weight: 600;
+}
+.live-driver-points-pts,
+.live-standings-total {
+  font-weight: 700;
+  color: var(--nascar-blue);
+}
+.live-standings-row {
+  border-bottom: 1px solid var(--line);
+  padding: 0.5rem 0;
+}
+.live-standings-row:last-child {
+  border-bottom: none;
+}
+.live-standings-row-header {
+  border-bottom: none;
+  padding-bottom: 0.25rem;
+}
+.live-standings-rank {
+  font-weight: 700;
+  color: var(--muted);
+  min-width: 2rem;
+}
+.live-standings-breakdown {
+  display: grid;
+  gap: 0.2rem;
+  padding-left: 2rem;
+  padding-top: 0.25rem;
+}
+.live-standings-breakdown-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+.live-standings-driver-pts {
+  font-weight: 600;
+  color: var(--text);
 }
 
 .countdown-chip {
@@ -951,13 +1121,13 @@ textarea {
 }
 
 .admin-heading-meta {
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
+  font-family: var(--font-body);
 }
 
 .callout pre {
   margin: 0;
   white-space: pre-wrap;
-  font-family: "Source Sans 3", monospace;
+  font-family: var(--font-body);
 }
 
 .button-row {
@@ -1058,6 +1228,15 @@ textarea {
 
 .status-card--success p {
   color: var(--success);
+  font-size: 0.8125rem;
+  margin: 0;
+}
+
+.status-card--locked {
+  background: var(--surface-elevated);
+}
+.status-card--locked p {
+  color: var(--text-secondary);
   font-size: 0.8125rem;
   margin: 0;
 }
@@ -1180,8 +1359,28 @@ textarea {
   color: var(--nascar-blue);
 }
 
+.tier-driver-position {
+  flex-shrink: 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  min-width: 1.5rem;
+  text-align: center;
+}
+
+.tier-card--yellow .tier-driver-position {
+  color: var(--nascar-yellow);
+}
+
+.tier-card--red .tier-driver-position {
+  color: var(--nascar-red);
+}
+
+.tier-card--blue .tier-driver-position {
+  color: var(--nascar-blue);
+}
+
 .tier-card .section-title-small {
-  font-family: "Racer Italic", "Barlow Condensed", "Arial Narrow", sans-serif;
+  font-family: var(--font-display);
   font-size: 1.25rem;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -1214,7 +1413,7 @@ textarea {
 }
 
 .driver-number {
-  font-family: "Racer Italic", "Barlow Condensed", sans-serif;
+  font-family: var(--font-display);
   font-size: 1.1rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -1363,10 +1562,6 @@ textarea {
   border-width: 2px;
 }
 
-.standings-row--placeholder {
-  opacity: 0.9;
-}
-
 .standings-row--rank-1 {
   background: rgb(212 175 55 / 18%);
 }
@@ -1507,6 +1702,54 @@ tbody tr:hover {
   color: color-mix(in srgb, var(--nascar-red) 85%, var(--text));
 }
 
+.pick-monitoring-names {
+  align-items: stretch;
+}
+
+.pick-monitoring-name-item {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 0.5rem;
+}
+
+.pick-monitoring-name-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.35rem 0.5rem;
+  font: inherit;
+  font-weight: 600;
+  color: var(--text);
+  background: color-mix(in srgb, var(--nascar-green) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--nascar-green) 35%, transparent);
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.pick-monitoring-name-trigger:hover {
+  background: color-mix(in srgb, var(--nascar-green) 20%, transparent);
+  border-color: color-mix(in srgb, var(--nascar-green) 50%, transparent);
+}
+
+.pick-monitoring-chevron {
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.pick-monitoring-picks-dropdown {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-left: 0.25rem;
+}
+
 .breakdown-list,
 .results-list {
   list-style: none;
@@ -1644,15 +1887,25 @@ tbody tr:hover {
   }
 }
 
-.race-breakdown-name {
+.race-breakdown-left {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.race-breakdown-row .driver-line {
   font-size: 0.94rem;
   font-weight: 600;
-  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .race-breakdown-meta {
   font-size: 0.75rem;
   color: var(--muted);
+  flex-shrink: 0;
 }
 
 .race-breakdown-right {
@@ -1704,7 +1957,7 @@ tbody tr:hover {
 }
 
 .big-number {
-  font-family: "Racer Italic", "Barlow Condensed", sans-serif;
+  font-family: var(--font-display);
   font-size: 2rem;
   color: var(--nascar-blue);
   text-transform: uppercase;
@@ -1738,6 +1991,12 @@ tbody tr:hover {
   margin-top: 0.7rem;
   color: var(--error);
   font-size: 0.85rem;
+}
+
+.error-footer-list {
+  margin: 0;
+  padding-left: 1.25rem;
+  list-style: disc;
 }
 
 @media (prefers-reduced-motion: reduce) {

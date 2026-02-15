@@ -73,12 +73,19 @@ export interface PickDoc {
 export interface RaceDriverPoints {
   driverId: string;
   basePoints: number;
+  /** Current running position (1-based) when from live feed. */
+  runningPosition?: number;
 }
 
 export interface RacePointsDoc {
   drivers: RaceDriverPoints[];
   lastSyncedAt: FirebaseFirestore.Timestamp;
   source?: string;
+  /** Set when source is nascar-live: current lap and stage info for UI. */
+  liveLapNumber?: number;
+  liveLapsInRace?: number;
+  liveLapsToGo?: number;
+  liveStage?: { stageNum: number; finishAtLap: number; lapsInStage: number };
 }
 
 export interface AdjustmentDoc {

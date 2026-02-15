@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct PlayerTabView: View {
+    @EnvironmentObject private var viewModel: PlayerViewModel
     @Environment(\.colorScheme) private var colorScheme
     @State private var selectedTab: Int = 0
 
@@ -29,6 +30,14 @@ struct PlayerTabView: View {
                     Label("Race", systemImage: "flag.checkered")
                 }
                 .tag(3)
+
+            if viewModel.isAdmin {
+                AdminView()
+                    .tabItem {
+                        Label("Admin", systemImage: "gearshape.fill")
+                    }
+                    .tag(4)
+            }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
             HeaderView(title: pageName, showLeagueMenu: true)
@@ -52,6 +61,11 @@ struct PlayerTabView: View {
                 }
         }
         .tint(NASCARTheme.red)
+        .onChange(of: viewModel.isAdmin) { _, isAdmin in
+            if !isAdmin && selectedTab == 4 {
+                selectedTab = 0
+            }
+        }
     }
 
     private var pageName: String {
@@ -60,6 +74,7 @@ struct PlayerTabView: View {
         case 1: return "Picks"
         case 2: return "Standings"
         case 3: return "Race"
+        case 4: return "Admin"
         default: return "Home"
         }
     }

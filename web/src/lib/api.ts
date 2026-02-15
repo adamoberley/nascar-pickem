@@ -73,16 +73,6 @@ export async function createLeague(input: {
   return result.data as { leagueId: string; inviteCode: string };
 }
 
-export async function getLeaguePreviewByInviteCode(inviteCode: string): Promise<{
-  leagueId: string;
-  name: string;
-  memberNames: string[];
-}> {
-  const fn = httpsCallable(functions, "getLeaguePreviewByInviteCode");
-  const result = await fn({ inviteCode: inviteCode.toUpperCase() });
-  return result.data as { leagueId: string; name: string; memberNames: string[] };
-}
-
 export async function joinLeagueByInvite(input: {
   inviteCode: string;
   displayName: string;
@@ -106,6 +96,15 @@ export async function savePick(input: {
 export async function manualRefreshData(input: { leagueId: string }): Promise<void> {
   const fn = httpsCallable(functions, "manualRefreshData");
   await fn(input);
+}
+
+/** Pull latest live race points from NASCAR.com feed (admin). */
+export async function syncLiveRaceNow(input: {
+  leagueId: string;
+}): Promise<{ ok: boolean; updated: boolean; reason?: string }> {
+  const fn = httpsCallable(functions, "syncLiveRaceNow");
+  const result = await fn(input);
+  return result.data as { ok: boolean; updated: boolean; reason?: string };
 }
 
 export async function manualUpsertRacePoints(input: {

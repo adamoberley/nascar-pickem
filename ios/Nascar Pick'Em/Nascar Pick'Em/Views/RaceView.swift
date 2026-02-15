@@ -131,14 +131,14 @@ struct RaceView: View {
                         Text("Results")
                             .font(NASCARTheme.displayFont(size: 24, weight: .bold))
                             .textCase(.uppercase)
-                        if viewModel.selectedRacePoints.isEmpty {
+                        if viewModel.selectedRacePointsWithAdjustments.isEmpty {
                             Text("No official points loaded yet.")
                                 .font(NASCARTheme.textFont(size: 15))
                                 .foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         } else {
                             VStack(alignment: .leading, spacing: 8) {
-                                ForEach(viewModel.selectedRacePoints, id: \.0) { driverId, points in
+                                ForEach(viewModel.selectedRacePointsWithAdjustments, id: \.0) { driverId, points in
                                     HStack {
                                         VStack(alignment: .leading) {
                                             Text(viewModel.driversById[driverId]?.name ?? driverId)

@@ -42,8 +42,6 @@ npm run deploy
 
 This deploys Hosting (web app from `web/dist`), Functions, Firestore rules, and indexes. Live site: `https://YOUR_PROJECT_ID.web.app` (e.g. https://nascar-pick-em.web.app).
 
-**GitHub Actions:** Pushes to `main` auto-deploy. Add `FIREBASE_TOKEN` in repo secrets (from `firebase login:ci`). See [.github/workflows/deploy.yml](../.github/workflows/deploy.yml).
-
 **Font assets:** `firebase.json` includes headers for `*.woff2` and `*.otf` so custom fonts (Racer Italic, etc.) are served with correct MIME types and caching.
 
 Callable functions use `invoker: "public"` so the Cloud Run service allows client invocation; auth is still enforced inside each function (e.g. `requireAuthUid`, `assertAdminInLeague`). If you see "Missing or insufficient permissions" when creating a league or calling other callables, redeploy functions so the invoker IAM is applied.
@@ -77,7 +75,7 @@ gcloud projects add-iam-policy-binding nascar-pick-em \
 If deploy times out during "Loading and analyzing source code" for functions:
 
 - **Stub entry:** Functions use a discovery-only entry (`lib/index.js`); the heavy bundle loads only when an export is accessed. Try deploy again.
-- **Deploy from GitHub Actions:** Push to `main` or run the **Deploy to Firebase** workflow manually. Add `FIREBASE_TOKEN` in repo secrets (from `firebase login:ci`). The workflow runs on a cloud runner with more memory and a longer discovery timeout.
+- **Memory:** Deploy from a machine with sufficient memory, or deploy functions and hosting separately: `firebase deploy --only functions` then `firebase deploy --only hosting`.
 
 ## 6. Seed league data (after deploy)
 

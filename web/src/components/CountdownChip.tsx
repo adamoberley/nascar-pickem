@@ -19,21 +19,23 @@ function formatDuration(ms: number): string {
   const displayHours = hours % 24;
 
   if (hours >= 1) {
-    return `${days}d ${displayHours}h ${String(minutes).padStart(2, "0")}m`;
+    const daysPart = days > 0 ? `${days}d ` : "";
+    return `${daysPart}${displayHours}h ${minutes}m`;
   }
-  return `${String(minutes).padStart(2, "0")}m ${String(seconds).padStart(2, "0")}s`;
+  return `${minutes}m ${seconds}s`;
 }
 
 export function CountdownChip({ lockTime }: Props) {
   const [nowMs, setNowMs] = useState(Date.now());
 
   useEffect(() => {
-    const timer = window.setInterval(() => {
-      setNowMs(Date.now());
-    }, 1000);
-
+    const update = () => setNowMs(Date.now());
+    const remaining = lockTime.toMillis() - Date.now();
+    const intervalMs =
+      remaining > 3600_000 ? 60_000 : remaining > 60_000 ? 15_000 : 1000;
+    const timer = window.setInterval(update, intervalMs);
     return () => window.clearInterval(timer);
-  }, []);
+  }, [lockTime]);
 
   const remainingMs = useMemo(() => lockTime.toMillis() - nowMs, [lockTime, nowMs]);
 

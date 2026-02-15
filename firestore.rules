@@ -29,6 +29,12 @@ service cloud.firestore {
         request.time >= get(racePath(leagueId, raceId)).data.lockTime;
     }
 
+    // Once a race is locked or completed, any league member can read all picks for that race (for live standings).
+    function raceIsLockedOrCompleted(leagueId, raceId) {
+      return exists(racePath(leagueId, raceId)) &&
+        get(racePath(leagueId, raceId)).data.status in ["locked", "completed"];
+    }
+
     function validPickShape(data) {
       return data.tierA is list &&
         data.tierB is list &&
@@ -92,7 +98,9 @@ service cloud.firestore {
 
       match /picks/{pickId} {
         allow read: if isMember(leagueId) &&
-          (isAdmin(leagueId) || resource.data.userId == request.auth.uid);
+          (isAdmin(leagueId) ||
+           resource.data.userId == request.auth.uid ||
+           (resource.data.raceId is string && raceIsLockedOrCompleted(leagueId, resource.data.raceId)));
 
         allow create: if pickWriteAllowed(leagueId, request.resource.data);
 

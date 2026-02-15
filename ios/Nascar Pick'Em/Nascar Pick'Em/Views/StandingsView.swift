@@ -322,7 +322,7 @@ struct StandingsView: View {
             Text("Season Leaderboard")
                 .font(NASCARTheme.displayFont(size: 20, weight: .bold))
                 .textCase(.uppercase)
-            Text("1st $1,000 · 2nd $250")
+            Text("1st $1,000 · 2nd $250 · 3rd $100")
                 .font(NASCARTheme.textFont(size: 13))
                 .foregroundStyle(.secondary)
             ZStack(alignment: .bottom) {

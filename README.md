@@ -7,7 +7,7 @@ Private season-long NASCAR Pick'Em platform for ~20–21 users with:
 
 **Requirements:** Node.js ≥ 20 (see `package.json` engines).
 
-**Live site:** https://nascar-pick-em.web.app (Firebase Hosting). Pushes to `main` auto-deploy via GitHub Actions.
+**Live site:** https://nascar-pick-em.web.app (Firebase Hosting). Deploy with `npm run deploy`.
 
 ## What This Project Includes
 
@@ -27,7 +27,7 @@ Private season-long NASCAR Pick'Em platform for ~20–21 users with:
 | Path | Description |
 |------|-------------|
 | `functions/` | Firebase Cloud Functions (TypeScript) |
-| `web/` | React + Vite web app (mobile responsive, admin role included) |
+| `web/` | React + Vite web app (mobile responsive). Views in `web/src/views/`; admin role included. |
 | `ios/Nascar Pick'Em/` | SwiftUI iOS app (Xcode project and source) |
 | `docs/` | Project documentation (see [docs/README.md](docs/README.md)) |
 | `scripts/` | `setup-env.js`, `init-db.js` |
@@ -59,12 +59,14 @@ Core behavior:
 1. Compute tiers from latest standings snapshot (`computeRaceTiers`, plus snapshot trigger).
 2. Auto-lock picks at race lock time (`lockPicksAtRaceStart`, scheduled every minute).
 3. Scheduled ingestion (`ingestLeagueDataDaily`, `refreshRaceResults`) with swappable provider.
-4. Re-score races on picks / race points / adjustments changes.
-5. Recompute season totals and rank on weekly score updates.
-6. Admin callables:
+4. Live race sync from NASCAR.com (`syncLiveRaceFromNascar`, scheduled; `syncLiveRaceNow` callable for admins).
+5. Re-score races on picks / race points / adjustments changes.
+6. Recompute season totals and rank on weekly score updates.
+7. Admin callables:
    - `manualUpsertRacePoints`
    - `addAdjustment`
    - `manualRefreshData`
+   - `syncLiveRaceNow` (trigger live NASCAR feed sync during a race)
 
 Player/admin callables:
 - `createLeague`
@@ -77,10 +79,11 @@ Provider interface: `functions/src/provider.ts`. See [docs/provider-adapter.md](
 
 - **Static fallback (default):** Built-in 2026 schedule, standings, and Cook Out Clash result. No external API needed.
 - **HTTP adapter (optional):** Set `NASCAR_PROVIDER_BASE_URL` (and optionally `NASCAR_PROVIDER_TOKEN`) for a custom provider implementing the adapter endpoints (schedule, standings, results).
+- **Live race scoring:** NASCAR.com live feed (cf.nascar.com) for in-progress races; see `functions/src/nascar-live.ts` and [docs/race-results-sources.md](docs/race-results-sources.md).
 
 ## Web App
 
-**Typography:** Racer Italic (display/race titles), Barlow Condensed, Source Sans 3. Font assets in `web/src/assets/fonts/` and `web/public/fonts/`.
+**Typography:** Racer Italic (display/race titles), Barlow Condensed, Source Sans 3. Font assets in `web/src/assets/fonts/`.
 
 ### Features
 
@@ -97,6 +100,7 @@ Admin features:
 - Member paid/unpaid toggles
 - Submission monitor (who has/hasn't picked)
 - Manual data refresh
+- Sync live race (trigger NASCAR.com live feed during in-progress races)
 - Manual race point override
 - Add penalties/corrections
 
@@ -105,7 +109,7 @@ Admin features:
 Source lives in `ios/Nascar Pick'Em/`:
 - Auth (sign in / create account)
 - League join/create
-- Tabs: Home, Picks, Standings, Race
+- Tabs: Home, Picks, Standings, Race, Admin (Admin tab visible to league admins only)
 - Firestore listeners and callable integration
 
 To run on iOS:
@@ -151,8 +155,6 @@ npm run build --workspaces
 npm run deploy
 # or: firebase deploy
 ```
-
-**CI:** Pushes to `main` trigger GitHub Actions to build and deploy. Add `FIREBASE_TOKEN` (from `firebase login:ci`) in repo secrets. See [.github/workflows/deploy.yml](.github/workflows/deploy.yml).
 
 ### 6. Local web dev
 

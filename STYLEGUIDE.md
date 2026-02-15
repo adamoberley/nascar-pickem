@@ -71,7 +71,7 @@ VvWwXxYyZz
 Use this typeface for headings, body text, and UI elements to ensure consistency. Apply bold or italic variations sparingly for emphasis.
 
 **App typography (web & iOS):**
-- **Racer Italic** — Display font for race titles, headers, and accents (in `web/src/assets/fonts/`, `web/public/fonts/`, and iOS Fonts).
+- **Racer Italic** — Display font for race titles, headers, and accents (in `web/src/assets/fonts/` and iOS Fonts).
 - **Barlow Condensed** — Fallback for headings.
 - **Source Sans 3** — Body text.
 

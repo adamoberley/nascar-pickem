@@ -97,6 +97,42 @@ struct SeasonScoreItem: Identifiable {
     let rank: Int
 }
 
+/// One driver entry in race points (base points; optional running position when live).
+struct RacePointsDriverItem {
+    let driverId: String
+    let basePoints: Int
+    /// Current running position (1-based) when from live feed.
+    let runningPosition: Int?
+}
+
+/// Full race points document for a race (supports live lap/stage and running positions).
+struct RacePointsDocument {
+    let drivers: [RacePointsDriverItem]
+    var liveLapNumber: Int?
+    var liveLapsInRace: Int?
+    var liveStage: (stageNum: Int, finishAtLap: Int)?
+
+    static var empty: RacePointsDocument { RacePointsDocument(drivers: [], liveLapNumber: nil, liveLapsInRace: nil, liveStage: nil) }
+}
+
+/// Standings snapshot entry (driver position for tier computation).
+struct StandingEntryItem {
+    let driverId: String
+    let position: Int
+}
+
+/// Latest standings snapshot for tier fallback when tier doc is missing.
+struct StandingsSnapshotItem {
+    let id: String
+    let drivers: [StandingEntryItem]
+}
+
+/// Adjustment applied to a driver's points for a race.
+struct AdjustmentItem {
+    let driverId: String
+    let deltaPoints: Int
+}
+
 /// A row in the merged standings (real members + member names not yet joined).
 struct StandingsRowItem: Identifiable {
     let id: String

@@ -9,7 +9,7 @@ Documentation for setup, deployment, admin workflow, and data integration.
 | [setup-checklist.md](setup-checklist.md) | Full setup: Firebase project, env vars, build, deploy, and troubleshooting (e.g. IAM for Cloud Functions). |
 | [GETTING-FULLY-WORKING.md](GETTING-FULLY-WORKING.md) | Get a 2026 league from zero to playable using built-in schedule, standings, and Clash result (no external NASCAR provider). |
 
-**Hosting:** The web app is deployed to Firebase Hosting. Live URL: https://nascar-pick-em.web.app. Pushes to `main` trigger GitHub Actions to deploy (see [../.github/workflows/deploy.yml](../.github/workflows/deploy.yml)).
+**Hosting:** The web app is deployed to Firebase Hosting. Live URL: https://nascar-pick-em.web.app. Deploy with `npm run deploy`.
 
 ## Admin & operations
 
@@ -22,7 +22,7 @@ Documentation for setup, deployment, admin workflow, and data integration.
 | Document | Description |
 |----------|-------------|
 | [provider-adapter.md](provider-adapter.md) | NASCAR data provider contract: required methods and HTTP adapter endpoints (schedule, standings, results). |
-| [race-results-sources.md](race-results-sources.md) | Where to get standings and race results (NASCAR.com, ESPN URLs and scraping notes). |
+| [race-results-sources.md](race-results-sources.md) | Where to get standings and race results (NASCAR.com, ESPN). Includes live feed (cf.nascar.com) for in-race scoring. |
 
 ## Firestore & indexes
 
