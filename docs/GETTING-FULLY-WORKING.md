@@ -80,7 +80,13 @@ Leagues that already have drivers will get Clash points applied when the provide
 
 ---
 
-## 7. Share and play
+## 7. Live race scoring (optional)
+
+During an in-progress race, admins can click **Sync Live Race** in Admin to pull the running order from NASCAR.com (cf.nascar.com). No `NASCAR_PROVIDER_BASE_URL` needed—the live feed is public. A scheduled job also syncs periodically. The Race tab shows live lap and stage info when available.
+
+---
+
+## 8. Share and play
 
 - Share the **invite code** (e.g. "NASCAR2026") with players.
 - Players sign in, join the league, then use **Picks** to choose drivers from the tiered list before each race locks.
@@ -95,6 +101,7 @@ Leagues that already have drivers will get Clash points applied when the provide
 | Schedule          | Full 2026 Cup schedule (40 events)        |
 | Drivers / tiers   | 2026 Cup standings (40 drivers, A/B/C)    |
 | Clash result     | Static Cook Out Clash finishing order     |
+| Live race scoring | NASCAR.com live feed (cf.nascar.com) during in-progress races |
 | Other race results | Not available until you add a provider or more static result files |
 
 To get results for more races automatically, you'd either:
@@ -114,3 +121,6 @@ To get results for more races automatically, you'd either:
 
 - **Wrong project or auth**  
   Check `.firebaserc` and `.env` (or hosting env). For the init script, use the same Firebase UID that appears in Auth after signing in.
+
+- **Live race not updating**  
+  The live feed (cf.nascar.com) is only active during Cup Series race broadcasts. Ensure the league has a race with `providerRaceKey` that maps to the current NASCAR race. Run **Sync Live Race** manually in Admin, or wait for the scheduled sync.

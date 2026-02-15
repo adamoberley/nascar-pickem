@@ -73,6 +73,8 @@ export interface RacePointsDoc {
     /** Current running position (1-based) when from live feed. */
     runningPosition?: number;
   }>;
+  /** Source of the points data, e.g. "nascar-live" when from live feed. */
+  source?: string;
   /** When from live feed: lap and stage info for UI. */
   liveLapNumber?: number;
   liveLapsInRace?: number;

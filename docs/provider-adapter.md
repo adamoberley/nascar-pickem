@@ -4,6 +4,8 @@ The ingestion layer uses `NascarDataProvider` (`functions/src/provider.ts`).
 
 For public URLs and patterns used by NASCAR.com and ESPN for **standings** and **race results**, see [race-results-sources.md](./race-results-sources.md).
 
+**Note:** Live race scoring (during an in-progress race) uses the NASCAR.com live feed (cf.nascar.com) directly via `functions/src/nascar-live.ts`, not this provider. The provider handles schedule, standings, and *post-race* results.
+
 ## Required Methods
 
 - `fetchSchedule(seasonYear)`

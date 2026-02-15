@@ -22,7 +22,7 @@ Documentation for setup, deployment, admin workflow, and data integration.
 | Document | Description |
 |----------|-------------|
 | [provider-adapter.md](provider-adapter.md) | NASCAR data provider contract: required methods and HTTP adapter endpoints (schedule, standings, results). |
-| [race-results-sources.md](race-results-sources.md) | Where to get standings and race results (NASCAR.com, ESPN). Includes live feed (cf.nascar.com) for in-race scoring. |
+| [race-results-sources.md](race-results-sources.md) | Standings and race results (NASCAR.com, ESPN). Live feed (cf.nascar.com) and stage points; implementation in `functions/src/nascar-live.ts`. |
 
 ## Firestore & indexes
 
