@@ -9,6 +9,8 @@ Documentation for setup, deployment, admin workflow, and data integration.
 | [setup-checklist.md](setup-checklist.md) | Full setup: Firebase project, env vars, build, deploy, and troubleshooting (e.g. IAM for Cloud Functions). |
 | [GETTING-FULLY-WORKING.md](GETTING-FULLY-WORKING.md) | Get a 2026 league from zero to playable using built-in schedule, standings, and Clash result (no external NASCAR provider). |
 
+**Hosting:** The web app is deployed to Firebase Hosting. Live URL: https://nascar-pick-em.web.app. Pushes to `main` trigger GitHub Actions to deploy (see [../.github/workflows/deploy.yml](../.github/workflows/deploy.yml)).
+
 ## Admin & operations
 
 | Document | Description |

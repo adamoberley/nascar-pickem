@@ -7,6 +7,8 @@ Private season-long NASCAR Pick'Em platform for ~20–21 users with:
 
 **Requirements:** Node.js ≥ 20 (see `package.json` engines).
 
+**Live site:** https://nascar-pick-em.web.app (Firebase Hosting). Pushes to `main` auto-deploy via GitHub Actions.
+
 ## What This Project Includes
 
 - Firestore schema aligned with your weekly game rules (3A / 2B / 1C)
@@ -76,7 +78,11 @@ Provider interface: `functions/src/provider.ts`. See [docs/provider-adapter.md](
 - **Static fallback (default):** Built-in 2026 schedule, standings, and Cook Out Clash result. No external API needed.
 - **HTTP adapter (optional):** Set `NASCAR_PROVIDER_BASE_URL` (and optionally `NASCAR_PROVIDER_TOKEN`) for a custom provider implementing the adapter endpoints (schedule, standings, results).
 
-## Web App Features
+## Web App
+
+**Typography:** Racer Italic (display/race titles), Barlow Condensed, Source Sans 3. Font assets in `web/src/assets/fonts/` and `web/public/fonts/`.
+
+### Features
 
 Player features:
 - Email/password sign-in and account creation
@@ -145,6 +151,8 @@ npm run build --workspaces
 npm run deploy
 # or: firebase deploy
 ```
+
+**CI:** Pushes to `main` trigger GitHub Actions to build and deploy. Add `FIREBASE_TOKEN` (from `firebase login:ci`) in repo secrets. See [.github/workflows/deploy.yml](.github/workflows/deploy.yml).
 
 ### 6. Local web dev
 

@@ -61,7 +61,7 @@ Usage Notes: Logos should be reproduced in full color or black/white only. Color
 
 Typography
 
-Primary Typeface: Stainless
+**NASCAR brand (reference):** Stainless (from brand guidelines).
 Character Set Example:textAaBbCcDdEeFfGg
 HhIiJjKkLlMmNn
 OoPpQqRrSsTtUu
@@ -69,6 +69,12 @@ VvWwXxYyZz
 0123456789
 
 Use this typeface for headings, body text, and UI elements to ensure consistency. Apply bold or italic variations sparingly for emphasis.
+
+**App typography (web & iOS):**
+- **Racer Italic** — Display font for race titles, headers, and accents (in `web/src/assets/fonts/`, `web/public/fonts/`, and iOS Fonts).
+- **Barlow Condensed** — Fallback for headings.
+- **Source Sans 3** — Body text.
+
 Logos
 Incorporate the following logo variants based on context:
 

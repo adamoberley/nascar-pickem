@@ -36,7 +36,7 @@ This deploys Functions (with 2026 schedule, standings, and Clash result), Hostin
 
 **Option A – Web app (recommended)**
 
-1. Open your hosted web app and sign in (create an account if needed).
+1. Open your hosted web app (e.g. https://nascar-pick-em.web.app) and sign in (create an account if needed).
 2. Create a league:
    - League name: e.g. "NASCAR Pick'Em 2026"
    - Invite code: e.g. "NASCAR2026"

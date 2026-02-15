@@ -40,6 +40,12 @@ Functions use **esbuild** for the build (fast); type-checking is still `npm run 
 npm run deploy
 ```
 
+This deploys Hosting (web app from `web/dist`), Functions, Firestore rules, and indexes. Live site: `https://YOUR_PROJECT_ID.web.app` (e.g. https://nascar-pick-em.web.app).
+
+**GitHub Actions:** Pushes to `main` auto-deploy. Add `FIREBASE_TOKEN` in repo secrets (from `firebase login:ci`). See [.github/workflows/deploy.yml](../.github/workflows/deploy.yml).
+
+**Font assets:** `firebase.json` includes headers for `*.woff2` and `*.otf` so custom fonts (Racer Italic, etc.) are served with correct MIME types and caching.
+
 Callable functions use `invoker: "public"` so the Cloud Run service allows client invocation; auth is still enforced inside each function (e.g. `requireAuthUid`, `assertAdminInLeague`). If you see "Missing or insufficient permissions" when creating a league or calling other callables, redeploy functions so the invoker IAM is applied.
 
 **If you get "internal" error with "missing permissions" when creating a league:**
@@ -71,11 +77,11 @@ gcloud projects add-iam-policy-binding nascar-pick-em \
 If deploy times out during "Loading and analyzing source code" for functions:
 
 - **Stub entry:** Functions use a discovery-only entry (`lib/index.js`); the heavy bundle loads only when an export is accessed. Try deploy again.
-- **Deploy from GitHub Actions:** Push to `main` or run the workflow **Deploy to Firebase** manually. Add `FIREBASE_TOKEN` in repo secrets (from `firebase login:ci`). The workflow runs on a cloud runner with more memory and a 120s discovery timeout.
+- **Deploy from GitHub Actions:** Push to `main` or run the **Deploy to Firebase** workflow manually. Add `FIREBASE_TOKEN` in repo secrets (from `firebase login:ci`). The workflow runs on a cloud runner with more memory and a longer discovery timeout.
 
 ## 6. Seed league data (after deploy)
 
-1. Open the web app (Hosting URL, e.g. `https://YOUR_PROJECT_ID.web.app`)
+1. Open the web app at your Hosting URL (e.g. https://nascar-pick-em.web.app or `https://YOUR_PROJECT_ID.web.app`)
 2. Sign in (email/password)
 3. Create a league
 4. Use **Refresh Data Now** once to seed schedule and tiers
