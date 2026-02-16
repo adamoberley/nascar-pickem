@@ -75,10 +75,21 @@ export interface RaceDriverPoints {
   basePoints: number;
   /** Current running position (1-based) when from live feed. */
   runningPosition?: number;
+  /** Official finish position (1-based) when available from completed race results. */
+  finishPosition?: number;
+}
+
+export interface OfficialRaceResult {
+  finishPosition: number;
+  driverName: string;
+  points: number;
+  vehicleNumber?: string;
 }
 
 export interface RacePointsDoc {
   drivers: RaceDriverPoints[];
+  /** Unmapped official results rows from NASCAR (for UI display in finish order). */
+  officialResults?: OfficialRaceResult[];
   lastSyncedAt: FirebaseFirestore.Timestamp;
   source?: string;
   /** Set when source is nascar-live: current lap and stage info for UI. */

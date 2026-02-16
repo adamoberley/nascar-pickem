@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   collection,
   doc,
@@ -14,8 +14,6 @@ import {
   loadMemberships,
   pickDocRef,
   racePointsDocRef,
-  savePick,
-  setLeagueSettings,
   tierDocRef,
   weeklyScoreDocRef,
   type Membership,
@@ -34,6 +32,8 @@ import type {
 } from "./lib/types";
 import { logout, useAuthState } from "./hooks/useAuth";
 import { useFirestoreCollection, useFirestoreDocument } from "./hooks/useFirestore";
+import { usePickDraft } from "./hooks/usePickDraft";
+import { useRaceSelection } from "./hooks/useRaceSelection";
 import { Header } from "./components/Header";
 import { AuthView } from "./views/AuthView";
 import { LeagueAccessView } from "./views/LeagueAccessView";
@@ -42,6 +42,13 @@ import { PicksTab } from "./views/PicksTab";
 import { StandingsTab } from "./views/StandingsTab";
 import { RaceTab } from "./views/RaceTab";
 import { AdminTab } from "./views/AdminTab";
+import { SPRINT_CONFIGS } from "./lib/sprint-config";
+import {
+  buildDriverPointsByDriverId,
+  mapOfficialResultsToDriverPoints,
+  normalizeOfficialRaceResults,
+  normalizeRacePointDrivers,
+} from "./lib/race-points";
 
 type AppTab = "home" | "picks" | "standings" | "race" | "admin";
 
@@ -107,6 +114,7 @@ export default function App() {
       ? doc(db, "leagues", selectedLeagueId, "members", user.uid)
       : null,
   );
+  const isAdmin = myMemberState.data?.role === "admin";
 
   const racesQuery = useMemo<Query | null>(() => {
     if (!selectedLeagueId) {
@@ -171,89 +179,19 @@ export default function App() {
     [racesState.data],
   );
 
-  const upcomingRace = useMemo(() => {
-    const now = Date.now();
-    return (
-      races.find(
-        (race) => race.status === "scheduled" && race.lockTime.toMillis() > now,
-      ) ?? races.find((race) => race.status === "scheduled")
-    );
-  }, [races]);
-
-  const latestCompletedRace = useMemo(
-    () => [...races].reverse().find((race) => race.status === "completed"),
-    [races],
-  );
-
-  /** Race currently in progress (picks locked, results may be updating). */
-  const liveRace = useMemo(
-    () => races.find((race) => race.status === "locked") ?? null,
-    [races],
-  );
-
-  /** Scheduled race whose lock time has already passed (race in progress, may not be "locked" yet). */
-  const inProgressScheduledRace = useMemo(() => {
-    const now = Date.now();
-    return (
-      races.find(
-        (race) =>
-          race.status === "scheduled" && race.lockTime.toMillis() <= now,
-      ) ?? null
-    );
-  }, [races]);
-
-  /**
-   * 10pm Eastern on the calendar day after the race start.
-   * We keep showing the completed race until this moment.
-   * 10pm ET = 03:00 UTC the following day (EST).
-   */
-  const nextDay10pmETMs = useMemo(() => {
-    if (!latestCompletedRace) return 0;
-    const d = new Date(latestCompletedRace.startTime.toMillis());
-    const year = d.getUTCFullYear();
-    const month = d.getUTCMonth();
-    const date = d.getUTCDate();
-    return Date.UTC(year, month, date + 2, 3, 0, 0, 0);
-  }, [latestCompletedRace?.id, latestCompletedRace?.startTime?.toMillis?.()]);
-
-  /** Race we show for picks/Home. Prefer in-progress, then just-completed until 10pm ET next day, then next upcoming. */
-  const primaryRace = useMemo(() => {
-    if (liveRace) return liveRace;
-    if (inProgressScheduledRace) return inProgressScheduledRace;
-    const now = Date.now();
-    if (
-      latestCompletedRace &&
-      nextDay10pmETMs > 0 &&
-      now < nextDay10pmETMs
-    ) {
-      return latestCompletedRace;
-    }
-    return upcomingRace ?? null;
-  }, [liveRace, inProgressScheduledRace, latestCompletedRace, upcomingRace, nextDay10pmETMs]);
-
-  /** Race in progress for live UI (locked or scheduled past lock). Used for LIVE section and live data. */
-  const effectiveLiveRace = useMemo(
-    () => liveRace ?? inProgressScheduledRace ?? null,
-    [liveRace, inProgressScheduledRace],
-  );
-
-  const [selectedRaceId, setSelectedRaceId] = useState<string | null>(null);
-  useEffect(() => {
-    const defaultRaceId = primaryRace?.id ?? latestCompletedRace?.id ?? upcomingRace?.id ?? null;
-    if (!selectedRaceId) {
-      setSelectedRaceId(defaultRaceId);
-      return;
-    }
-
-    const raceExists = races.some((race) => race.id === selectedRaceId);
-    if (!raceExists) {
-      setSelectedRaceId(defaultRaceId);
-    }
-  }, [primaryRace?.id, latestCompletedRace?.id, upcomingRace?.id, races, selectedRaceId]);
-
-  const selectedRace = useMemo(
-    () => (selectedRaceId ? (races.find((r) => r.id === selectedRaceId) ?? null) : null),
-    [races, selectedRaceId],
+  const {
+    upcomingRace,
+    latestCompletedRace,
+    liveRace,
+    primaryRace,
+    effectiveLiveRace,
+    selectedRaceId,
+    setSelectedRaceId,
+    selectedRace,
+    canReadAllPicksForSelectedRace,
+  } = useRaceSelection(races, isAdmin);
+  const selectedRaceTierState = useFirestoreDocument<TierDoc>(
+    selectedLeagueId && selectedRaceId ? tierDocRef(selectedLeagueId, selectedRaceId) : null,
   );
 
   const tierState = useFirestoreDocument<TierDoc>(
@@ -277,6 +215,10 @@ export default function App() {
   }, [latestStandingsState.data]);
 
   const effectiveTiers = tierState.data ?? tiersFromStandingsSnapshot;
+  const selectedRaceEffectiveTiers = useMemo((): TierDoc | null => {
+    if (selectedRaceTierState.data) return selectedRaceTierState.data;
+    return effectiveTiers;
+  }, [selectedRaceTierState.data, effectiveTiers]);
 
   const pickState = useFirestoreDocument<PickDoc>(
     selectedLeagueId && primaryRace && user
@@ -331,17 +273,75 @@ export default function App() {
       .filter((s) => s.raceId === liveRaceForDisplay.id)
       .sort((a, b) => b.weeklyTotal - a.weeklyTotal);
   }, [liveRaceForDisplay?.id, allWeeklyScoresState.data]);
+  const selectedRaceWeeklyScores = useMemo(() => {
+    if (!selectedRaceId) return [];
+    return allWeeklyScoresState.data.filter((s) => s.raceId === selectedRaceId);
+  }, [allWeeklyScoresState.data, selectedRaceId]);
+  const driversById = useMemo(() => toDriversMap(driversState.data), [driversState.data]);
+  const memberById = useMemo(
+    () =>
+      membersState.data.reduce<Record<string, MemberDoc>>((acc, member) => {
+        acc[member.id] = member;
+        return acc;
+      }, {}),
+    [membersState.data],
+  );
+  const liveRacePointDriversForDisplay = useMemo(
+    () => normalizeRacePointDrivers(liveRacePointsForDisplay),
+    [liveRacePointsForDisplay],
+  );
 
   /** When race is live, map driverId -> current running position for picks UI. */
   const driverPositionByDriverId = useMemo(() => {
-    const points = liveRacePointsForDisplay;
-    if (!points?.drivers?.length) return {};
     const map: Record<string, number> = {};
-    for (const d of points.drivers) {
+    for (const d of liveRacePointDriversForDisplay) {
       if (d.runningPosition != null) map[d.driverId] = d.runningPosition;
     }
     return map;
-  }, [liveRacePointsForDisplay]);
+  }, [liveRacePointDriversForDisplay]);
+  const primaryRacePointDrivers = useMemo(
+    () => normalizeRacePointDrivers(primaryRacePointsState.data),
+    [primaryRacePointsState.data],
+  );
+  const primaryRaceOfficialResults = useMemo(
+    () => normalizeOfficialRaceResults(primaryRacePointsState.data),
+    [primaryRacePointsState.data],
+  );
+  const primaryRaceOfficialPointsByDriverId = useMemo(
+    () => mapOfficialResultsToDriverPoints(primaryRaceOfficialResults, driversById),
+    [primaryRaceOfficialResults, driversById],
+  );
+  const primaryRaceAdjustmentsQuery = useMemo<Query | null>(() => {
+    if (!selectedLeagueId || !primaryRace) {
+      return null;
+    }
+
+    return query(
+      collection(db, "leagues", selectedLeagueId, "adjustments"),
+      where("raceId", "==", primaryRace.id),
+    );
+  }, [selectedLeagueId, primaryRace?.id]);
+  const primaryRaceAdjustmentsState = useFirestoreCollection<{
+    driverId: string;
+    deltaPoints: number;
+  }>(primaryRaceAdjustmentsQuery);
+  const primaryRaceDriverPointsByDriverId = useMemo(() => {
+    const map = buildDriverPointsByDriverId(primaryRacePointDrivers, driversById);
+    for (const [driverId, points] of Object.entries(primaryRaceOfficialPointsByDriverId)) {
+      if (map[driverId] == null) {
+        map[driverId] = points;
+      }
+    }
+    for (const adjustment of primaryRaceAdjustmentsState.data) {
+      map[adjustment.driverId] =
+        (map[adjustment.driverId] ?? 0) + adjustment.deltaPoints;
+    }
+    return map;
+  }, [
+    primaryRaceAdjustmentsState.data,
+    primaryRaceOfficialPointsByDriverId,
+    primaryRacePointDrivers,
+  ]);
 
   const [selectedRaceIdForWeekly, setSelectedRaceIdForWeekly] = useState<string | null>(null);
   const [selectedSprintIndex, setSelectedSprintIndex] = useState<number>(0);
@@ -366,6 +366,17 @@ export default function App() {
     reason: string;
     type: "penalty" | "correction";
   }>(selectedRaceAdjustmentsQuery);
+  const selectedRacePicksQuery = useMemo<Query | null>(() => {
+    if (!selectedLeagueId || !selectedRace || !canReadAllPicksForSelectedRace) {
+      return null;
+    }
+
+    return query(
+      collection(db, "leagues", selectedLeagueId, "picks"),
+      where("raceId", "==", selectedRace.id),
+    );
+  }, [selectedLeagueId, selectedRace?.id, canReadAllPicksForSelectedRace]);
+  const selectedRacePicksState = useFirestoreCollection<PickDoc>(selectedRacePicksQuery);
 
   const monitorRaceId = selectedRaceId ?? primaryRace?.id ?? null;
   const raceMonitorQuery = useMemo<Query | null>(() => {
@@ -381,16 +392,52 @@ export default function App() {
   }, [selectedLeagueId, monitorRaceId]);
 
   const raceMonitorPicksState = useFirestoreCollection<PickDoc>(raceMonitorQuery);
-
-  const driversById = useMemo(() => toDriversMap(driversState.data), [driversState.data]);
-  const memberById = useMemo(
-    () =>
-      membersState.data.reduce<Record<string, MemberDoc>>((acc, member) => {
-        acc[member.id] = member;
-        return acc;
-      }, {}),
-    [membersState.data],
+  const monitorRacePointsState = useFirestoreDocument<RacePointsDoc>(
+    selectedLeagueId && monitorRaceId ? racePointsDocRef(selectedLeagueId, monitorRaceId) : null,
   );
+  const monitorRaceAdjustmentsQuery = useMemo<Query | null>(() => {
+    if (!selectedLeagueId || !monitorRaceId) {
+      return null;
+    }
+
+    return query(
+      collection(db, "leagues", selectedLeagueId, "adjustments"),
+      where("raceId", "==", monitorRaceId),
+    );
+  }, [selectedLeagueId, monitorRaceId]);
+  const monitorRaceAdjustmentsState = useFirestoreCollection<{
+    driverId: string;
+    deltaPoints: number;
+  }>(monitorRaceAdjustmentsQuery);
+  const monitorRacePointDrivers = useMemo(
+    () => normalizeRacePointDrivers(monitorRacePointsState.data),
+    [monitorRacePointsState.data],
+  );
+  const monitorRaceOfficialResults = useMemo(
+    () => normalizeOfficialRaceResults(monitorRacePointsState.data),
+    [monitorRacePointsState.data],
+  );
+  const monitorRaceOfficialPointsByDriverId = useMemo(
+    () => mapOfficialResultsToDriverPoints(monitorRaceOfficialResults, driversById),
+    [monitorRaceOfficialResults, driversById],
+  );
+  const monitorRaceDriverPointsByDriverId = useMemo(() => {
+    const map = buildDriverPointsByDriverId(monitorRacePointDrivers, driversById);
+    for (const [driverId, points] of Object.entries(monitorRaceOfficialPointsByDriverId)) {
+      if (map[driverId] == null) {
+        map[driverId] = points;
+      }
+    }
+    for (const adjustment of monitorRaceAdjustmentsState.data) {
+      map[adjustment.driverId] =
+        (map[adjustment.driverId] ?? 0) + adjustment.deltaPoints;
+    }
+    return map;
+  }, [
+    monitorRaceAdjustmentsState.data,
+    monitorRaceOfficialPointsByDriverId,
+    monitorRacePointDrivers,
+  ]);
 
   type StandingsRow = { id: string; displayName: string; seasonTotal: number; rank: number };
   const mergedStandingsRows = useMemo((): StandingsRow[] => {
@@ -412,11 +459,11 @@ export default function App() {
         });
       }
     });
-    rows.sort((a, b) => {
+    const sorted = [...rows].sort((a, b) => {
       if (b.seasonTotal !== a.seasonTotal) return b.seasonTotal - a.seasonTotal;
       return a.displayName.localeCompare(b.displayName);
     });
-    return rows.map((row, index) => ({ ...row, rank: index + 1 }));
+    return sorted.map((row, index) => ({ ...row, rank: index + 1 }));
   }, [
     seasonScoresState.data,
     membersState.data,
@@ -428,19 +475,10 @@ export default function App() {
   const weeklyLeaderboardRows = useMemo((): { rank: number; userId: string; points: number }[] => {
     if (!effectiveWeeklyRaceId) return [];
     const byRace = allWeeklyScoresState.data.filter((s) => s.raceId === effectiveWeeklyRaceId);
-    byRace.sort((a, b) => b.weeklyTotal - a.weeklyTotal);
-    return byRace.map((s, i) => ({ rank: i + 1, userId: s.userId, points: s.weeklyTotal }));
+    const sorted = [...byRace].sort((a, b) => b.weeklyTotal - a.weeklyTotal);
+    return sorted.map((s, i) => ({ rank: i + 1, userId: s.userId, points: s.weeklyTotal }));
   }, [allWeeklyScoresState.data, effectiveWeeklyRaceId]);
 
-  const SPRINT_CONFIGS = [
-    { name: "February", index: 1, month: 2, payout: "$30" },
-    { name: "March", index: 2, month: 3, payout: "$120" },
-    { name: "April", index: 3, month: 4, payout: "$120" },
-    { name: "May", index: 4, month: 5, payout: "$120" },
-    { name: "June", index: 5, month: 6, payout: "$120" },
-    { name: "July", index: 6, month: 7, payout: "$120" },
-    { name: "August", index: 7, month: 8, payout: "$120" },
-  ] as const;
   const raceIdToSprintIndex = useMemo((): Record<string, number> => {
     const map: Record<string, number> = {};
     races.forEach((race) => {
@@ -479,140 +517,19 @@ export default function App() {
     return options;
   }, [races, currentRaceIdForWeekly]);
 
-  const [draftPick, setDraftPick] = useState<{ tierA: string[]; tierB: string[]; tierC: string[] }>({
-    tierA: [],
-    tierB: [],
-    tierC: [],
+  const {
+    draftPick,
+    isPickLocked,
+    pickError,
+    pickStatus,
+    pickSaving,
+    togglePick,
+    savePickSubmit,
+  } = usePickDraft({
+    selectedLeagueId,
+    primaryRace: primaryRace ?? null,
+    pickDoc: pickState.data,
   });
-  const [pickError, setPickError] = useState<string | null>(null);
-  const [pickStatus, setPickStatus] = useState("");
-  const [pickSaving, setPickSaving] = useState(false);
-  const pickDirtyRef = useRef(false);
-
-  useEffect(() => {
-    if (!primaryRace) {
-      setDraftPick({ tierA: [], tierB: [], tierC: [] });
-      pickDirtyRef.current = false;
-      return;
-    }
-
-    if (pickState.data) {
-      if (!pickDirtyRef.current) {
-        setDraftPick({
-          tierA: pickState.data.tierA,
-          tierB: pickState.data.tierB,
-          tierC: pickState.data.tierC,
-        });
-        pickDirtyRef.current = false;
-      }
-      return;
-    }
-
-    setDraftPick({ tierA: [], tierB: [], tierC: [] });
-    pickDirtyRef.current = false;
-  }, [pickState.data, primaryRace?.id]);
-
-  const isPickLocked =
-    !primaryRace ||
-    primaryRace.status !== "scheduled" ||
-    primaryRace.lockTime.toMillis() <= Date.now();
-
-  const isPickComplete =
-    draftPick.tierA.length === 3 &&
-    draftPick.tierB.length === 2 &&
-    draftPick.tierC.length === 1 &&
-    new Set([...draftPick.tierA, ...draftPick.tierB, ...draftPick.tierC]).size === 6;
-
-  const togglePick = (tier: "tierA" | "tierB" | "tierC", driverId: string, limit: number) => {
-    setPickError(null);
-    setPickStatus("");
-    pickDirtyRef.current = true;
-
-    setDraftPick((current) => {
-      const nextTierValues = current[tier].includes(driverId)
-        ? current[tier].filter((value) => value !== driverId)
-        : current[tier].length < limit
-          ? [...current[tier], driverId]
-          : current[tier];
-
-      return {
-        ...current,
-        [tier]: nextTierValues,
-      };
-    });
-  };
-
-  useEffect(() => {
-    if (
-      !pickDirtyRef.current ||
-      !isPickComplete ||
-      !selectedLeagueId ||
-      !primaryRace ||
-      isPickLocked ||
-      pickSaving
-    ) {
-      return;
-    }
-    const allDrivers = [...draftPick.tierA, ...draftPick.tierB, ...draftPick.tierC];
-    if (new Set(allDrivers).size !== allDrivers.length) return;
-
-    pickDirtyRef.current = false;
-    setPickError(null);
-    setPickStatus("");
-    setPickSaving(true);
-    savePick({
-      leagueId: selectedLeagueId,
-      raceId: primaryRace.id,
-      tierA: draftPick.tierA,
-      tierB: draftPick.tierB,
-      tierC: draftPick.tierC,
-    })
-      .then(() => {
-        setPickStatus("Picks saved.");
-      })
-      .catch((err) => {
-        setPickError((err as Error).message);
-        pickDirtyRef.current = true;
-      })
-      .finally(() => {
-        setPickSaving(false);
-      });
-  }, [isPickComplete, selectedLeagueId, primaryRace?.id, isPickLocked, pickSaving, draftPick.tierA, draftPick.tierB, draftPick.tierC]);
-
-  const savePickSubmit = async () => {
-    if (!selectedLeagueId || !primaryRace) {
-      return;
-    }
-
-    setPickError(null);
-    setPickStatus("");
-
-    const allDrivers = [...draftPick.tierA, ...draftPick.tierB, ...draftPick.tierC];
-    if (new Set(allDrivers).size !== allDrivers.length) {
-      setPickError("A driver can only be selected once across all tiers.");
-      return;
-    }
-
-    if (draftPick.tierA.length !== 3 || draftPick.tierB.length !== 2 || draftPick.tierC.length !== 1) {
-      setPickError("You must pick exactly 3 Tier A, 2 Tier B, and 1 Tier C drivers.");
-      return;
-    }
-
-    setPickSaving(true);
-    try {
-      await savePick({
-        leagueId: selectedLeagueId,
-        raceId: primaryRace.id,
-        ...draftPick,
-      });
-      setPickStatus("Picks saved.");
-      pickDirtyRef.current = false;
-    } catch (error) {
-      setPickError((error as Error).message);
-    } finally {
-      setPickSaving(false);
-    }
-  };
 
   const [settingsDraft, setSettingsDraft] = useState({
     name: "",
@@ -652,8 +569,6 @@ export default function App() {
   });
 
   const [expandedPickUserId, setExpandedPickUserId] = useState<string | null>(null);
-
-  const isAdmin = myMemberState.data?.role === "admin";
 
   useEffect(() => {
     if (isAdmin || tab !== "admin") {
@@ -704,30 +619,46 @@ export default function App() {
           inviteCode={leagueState.data?.inviteCode ?? selectedMembership?.league.inviteCode ?? null}
           isAdmin={isAdmin}
         />
-        <nav className="tabs" aria-label="Main">
+        <nav className="tabs" aria-label="Main" role="tablist">
           <button
+            id="tab-home"
             type="button"
+            role="tab"
+            aria-selected={tab === "home"}
+            aria-controls="panel-home"
             className={tab === "home" ? "active" : ""}
             onClick={() => setTab("home")}
           >
             Home
           </button>
           <button
+            id="tab-picks"
             type="button"
+            role="tab"
+            aria-selected={tab === "picks"}
+            aria-controls="panel-picks"
             className={tab === "picks" ? "active" : ""}
             onClick={() => setTab("picks")}
           >
             Picks
           </button>
           <button
+            id="tab-standings"
             type="button"
+            role="tab"
+            aria-selected={tab === "standings"}
+            aria-controls="panel-standings"
             className={tab === "standings" ? "active" : ""}
             onClick={() => setTab("standings")}
           >
             Standings
           </button>
           <button
+            id="tab-race"
             type="button"
+            role="tab"
+            aria-selected={tab === "race"}
+            aria-controls="panel-race"
             className={tab === "race" ? "active" : ""}
             onClick={() => setTab("race")}
           >
@@ -735,7 +666,11 @@ export default function App() {
           </button>
           {isAdmin ? (
             <button
+              id="tab-admin"
               type="button"
+              role="tab"
+              aria-selected={tab === "admin"}
+              aria-controls="panel-admin"
               className={tab === "admin" ? "active" : ""}
               onClick={() => setTab("admin")}
             >
@@ -747,107 +682,125 @@ export default function App() {
 
       <main className="content-grid">
         {tab === "home" ? (
-          <HomeTab
-            primaryRace={primaryRace ?? null}
-            upcomingRace={upcomingRace ?? null}
-            liveRace={liveRaceForDisplay}
-            liveRacePoints={liveRacePointsForDisplay}
-            liveWeeklyScores={liveWeeklyScores}
-            driverPositionByDriverId={driverPositionByDriverId}
-            pickState={pickState}
-            driversById={driversById}
-            memberById={memberById}
-            onOpenPicks={() => setTab("picks")}
-          />
+          <div id="panel-home" role="tabpanel" aria-labelledby="tab-home">
+            <HomeTab
+              primaryRace={primaryRace ?? null}
+              upcomingRace={upcomingRace ?? null}
+              liveRace={liveRaceForDisplay}
+              liveRacePoints={liveRacePointsForDisplay}
+              liveWeeklyScores={liveWeeklyScores}
+              driverPositionByDriverId={driverPositionByDriverId}
+              driverPointsByDriverId={primaryRaceDriverPointsByDriverId}
+              pickState={pickState}
+              driversById={driversById}
+              memberById={memberById}
+              onOpenPicks={() => setTab("picks")}
+            />
+          </div>
         ) : null}
 
         {tab === "picks" ? (
-          <PicksTab
-            primaryRace={primaryRace ?? null}
-            upcomingRace={upcomingRace ?? null}
-            tierState={{ loading: tierState.loading, error: tierState.error ?? undefined }}
-            tiersFromStandingsSnapshot={tiersFromStandingsSnapshot}
-            latestStandingsState={latestStandingsState}
-            effectiveTiers={effectiveTiers}
-            draftPick={draftPick}
-            togglePick={togglePick}
-            isPickLocked={isPickLocked}
-            pickError={pickError}
-            pickSaving={pickSaving}
-            pickStatus={pickStatus}
-            savePickSubmit={savePickSubmit}
-            driversById={driversById}
-            driverPositionByDriverId={driverPositionByDriverId}
-          />
+          <div id="panel-picks" role="tabpanel" aria-labelledby="tab-picks">
+            <PicksTab
+              primaryRace={primaryRace ?? null}
+              upcomingRace={upcomingRace ?? null}
+              tierState={{ loading: tierState.loading, error: tierState.error ?? undefined }}
+              tiersFromStandingsSnapshot={tiersFromStandingsSnapshot}
+              latestStandingsState={latestStandingsState}
+              effectiveTiers={effectiveTiers}
+              draftPick={draftPick}
+              togglePick={togglePick}
+              isPickLocked={isPickLocked}
+              pickError={pickError}
+              pickSaving={pickSaving}
+              pickStatus={pickStatus}
+              savePickSubmit={savePickSubmit}
+              driversById={driversById}
+              driverPositionByDriverId={driverPositionByDriverId}
+              driverPointsByDriverId={primaryRaceDriverPointsByDriverId}
+            />
+          </div>
         ) : null}
 
         {tab === "standings" ? (
-          <StandingsTab
-            seasonScoresLoading={seasonScoresState.loading}
-            allWeeklyScoresLoading={allWeeklyScoresState.loading}
-            selectedRaceIdForWeekly={selectedRaceIdForWeekly}
-            setSelectedRaceIdForWeekly={setSelectedRaceIdForWeekly}
-            weeklyRacePickerOptions={weeklyRacePickerOptions}
-            weeklyLeaderboardRows={weeklyLeaderboardRows}
-            isWeeklyExpanded={isWeeklyExpanded}
-            setIsWeeklyExpanded={setIsWeeklyExpanded}
-            selectedSprintIndex={selectedSprintIndex}
-            setSelectedSprintIndex={setSelectedSprintIndex}
-            SPRINT_CONFIGS={SPRINT_CONFIGS}
-            currentSprintIndex={currentSprintIndex}
-            sprintLeaderboardRows={sprintLeaderboardRows}
-            isMonthlyExpanded={isMonthlyExpanded}
-            setIsMonthlyExpanded={setIsMonthlyExpanded}
-            mergedStandingsRows={mergedStandingsRows}
-            isSeasonExpanded={isSeasonExpanded}
-            setIsSeasonExpanded={setIsSeasonExpanded}
-            memberById={memberById}
-            userId={user?.uid}
-          />
+          <div id="panel-standings" role="tabpanel" aria-labelledby="tab-standings">
+            <StandingsTab
+              seasonScoresLoading={seasonScoresState.loading}
+              allWeeklyScoresLoading={allWeeklyScoresState.loading}
+              selectedRaceIdForWeekly={selectedRaceIdForWeekly}
+              setSelectedRaceIdForWeekly={setSelectedRaceIdForWeekly}
+              weeklyRacePickerOptions={weeklyRacePickerOptions}
+              weeklyLeaderboardRows={weeklyLeaderboardRows}
+              isWeeklyExpanded={isWeeklyExpanded}
+              setIsWeeklyExpanded={setIsWeeklyExpanded}
+              selectedSprintIndex={selectedSprintIndex}
+              setSelectedSprintIndex={setSelectedSprintIndex}
+              SPRINT_CONFIGS={SPRINT_CONFIGS}
+              currentSprintIndex={currentSprintIndex}
+              sprintLeaderboardRows={sprintLeaderboardRows}
+              isMonthlyExpanded={isMonthlyExpanded}
+              setIsMonthlyExpanded={setIsMonthlyExpanded}
+              mergedStandingsRows={mergedStandingsRows}
+              isSeasonExpanded={isSeasonExpanded}
+              setIsSeasonExpanded={setIsSeasonExpanded}
+              memberById={memberById}
+              userId={user?.uid}
+            />
+          </div>
         ) : null}
 
         {tab === "race" ? (
-          <RaceTab
-            races={races}
-            selectedRace={selectedRace ?? null}
-            selectedRaceId={selectedRaceId}
-            setSelectedRaceId={setSelectedRaceId}
-            selectedRaceScoreState={selectedRaceScoreState}
-            selectedRacePickState={selectedRacePickState}
-            driversById={driversById}
-            selectedRacePointsState={selectedRacePointsState}
-            selectedRaceAdjustmentsState={selectedRaceAdjustmentsState}
-          />
+          <div id="panel-race" role="tabpanel" aria-labelledby="tab-race">
+            <RaceTab
+              races={races}
+              selectedRace={selectedRace ?? null}
+              selectedRaceId={selectedRaceId}
+              setSelectedRaceId={setSelectedRaceId}
+              selectedRaceTiers={selectedRaceEffectiveTiers}
+              selectedRaceScoreState={selectedRaceScoreState}
+              selectedRacePickState={selectedRacePickState}
+              driversById={driversById}
+              selectedRacePointsState={selectedRacePointsState}
+              selectedRaceAdjustmentsState={selectedRaceAdjustmentsState}
+              selectedRacePicksState={selectedRacePicksState}
+              selectedRaceWeeklyScores={selectedRaceWeeklyScores}
+              memberById={memberById}
+              canSeeAllPicks={canReadAllPicksForSelectedRace}
+            />
+          </div>
         ) : null}
 
         {tab === "admin" && isAdmin ? (
-          <AdminTab
-            selectedLeagueId={selectedLeagueId}
-            settingsDraft={settingsDraft}
-            setSettingsDraft={setSettingsDraft}
-            adminBusy={adminBusy}
-            setAdminBusy={setAdminBusy}
-            setAdminError={setAdminError}
-            setAdminMessage={setAdminMessage}
-            monitorRaceId={monitorRaceId}
-            raceMonitorPicksState={raceMonitorPicksState}
-            membersState={membersState}
-            expandedPickUserId={expandedPickUserId}
-            setExpandedPickUserId={setExpandedPickUserId}
-            driversById={driversById}
-            races={races}
-            manualResultsRaceId={manualResultsRaceId}
-            setManualResultsRaceId={setManualResultsRaceId}
-            manualResultsSource={manualResultsSource}
-            setManualResultsSource={setManualResultsSource}
-            manualResultsRows={manualResultsRows}
-            setManualResultsRows={setManualResultsRows}
-            driversState={driversState}
-            adjustmentDraft={adjustmentDraft}
-            setAdjustmentDraft={setAdjustmentDraft}
-            adminMessage={adminMessage}
-            adminError={adminError}
-          />
+          <div id="panel-admin" role="tabpanel" aria-labelledby="tab-admin">
+            <AdminTab
+              selectedLeagueId={selectedLeagueId}
+              settingsDraft={settingsDraft}
+              setSettingsDraft={setSettingsDraft}
+              adminBusy={adminBusy}
+              setAdminBusy={setAdminBusy}
+              setAdminError={setAdminError}
+              setAdminMessage={setAdminMessage}
+              monitorRaceId={monitorRaceId}
+              raceMonitorPicksState={raceMonitorPicksState}
+              monitorRaceDriverPointsByDriverId={monitorRaceDriverPointsByDriverId}
+              membersState={membersState}
+              expandedPickUserId={expandedPickUserId}
+              setExpandedPickUserId={setExpandedPickUserId}
+              driversById={driversById}
+              races={races}
+              manualResultsRaceId={manualResultsRaceId}
+              setManualResultsRaceId={setManualResultsRaceId}
+              manualResultsSource={manualResultsSource}
+              setManualResultsSource={setManualResultsSource}
+              manualResultsRows={manualResultsRows}
+              setManualResultsRows={setManualResultsRows}
+              driversState={driversState}
+              adjustmentDraft={adjustmentDraft}
+              setAdjustmentDraft={setAdjustmentDraft}
+              adminMessage={adminMessage}
+              adminError={adminError}
+            />
+          </div>
         ) : null}
       </main>
 

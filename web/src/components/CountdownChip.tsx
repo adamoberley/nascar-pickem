@@ -39,9 +39,11 @@ export function CountdownChip({ lockTime }: Props) {
 
   const remainingMs = useMemo(() => lockTime.toMillis() - nowMs, [lockTime, nowMs]);
 
+  if (remainingMs <= 0) return null;
+
   return (
-    <span className={`countdown-chip ${remainingMs <= 0 ? "locked" : "open"}`}>
-      {remainingMs <= 0 ? "Locked" : `Locks in ${formatDuration(remainingMs)}`}
+    <span className="countdown-chip open">
+      Locks in {formatDuration(remainingMs)}
     </span>
   );
 }

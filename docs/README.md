@@ -24,6 +24,8 @@ Documentation for setup, deployment, admin workflow, and data integration.
 | [provider-adapter.md](provider-adapter.md) | NASCAR data provider contract: required methods and HTTP adapter endpoints (schedule, standings, results). |
 | [race-results-sources.md](race-results-sources.md) | Standings and race results (NASCAR.com, ESPN). Live feed (cf.nascar.com) and stage points; implementation in `functions/src/nascar-live.ts`. |
 
+**Key modules (functions):** `provider.ts` (data provider), `nascar-live.ts` (live feed + stage points), `live-sync.ts` (live sync orchestration), `driver-mapping.ts` (vehicle number → driver mapping), `pick-validation.ts` (tier validation).
+
 ## Firestore & indexes
 
 | Document | Description |
@@ -31,6 +33,11 @@ Documentation for setup, deployment, admin workflow, and data integration.
 | [index-setup.md](index-setup.md) | Firestore index setup (composite indexes from `firestore.indexes.json`). |
 | [add-members-userid-index.md](add-members-userid-index.md) | How to add the **collection group** index on `members` by `userId` (required for “my leagues” queries). |
 | [firestore-rules-review.md](firestore-rules-review.md) | Review of Firestore security rules and coverage. |
+
+## Testing
+
+- **Unit tests:** `npm run test` — Vitest in `functions/` and `web/`
+- **E2E tests:** `npm run test:e2e` — Playwright in `web/tests/`; set `E2E_EMAIL`, `E2E_PASSWORD`, `E2E_INVITE_CODE` env vars
 
 ## Project root
 

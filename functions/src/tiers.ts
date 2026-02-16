@@ -2,7 +2,7 @@ import { logger } from "firebase-functions";
 import { nowTimestamp, racesRef, standingsSnapshotsRef, tiersRef } from "./data";
 import type { RaceDoc, StandingsSnapshotDoc } from "./types";
 
-function extractTierDriverIds(snapshot: StandingsSnapshotDoc): {
+export function extractTierDriverIds(snapshot: StandingsSnapshotDoc): {
   tierA: string[];
   tierB: string[];
   tierC: string[];

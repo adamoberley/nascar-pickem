@@ -12,6 +12,8 @@ interface Props {
   tierColor?: "yellow" | "red" | "blue";
   /** When race is live, driverId -> current running position (show P1, P2, etc. on selected picks). */
   driverPositionByDriverId?: Record<string, number>;
+  /** When race is locked/completed, driverId -> points for this race. */
+  driverPointsByDriverId?: Record<string, number>;
 }
 
 export function TierBucket({
@@ -24,6 +26,7 @@ export function TierBucket({
   onToggle,
   tierColor = "blue",
   driverPositionByDriverId,
+  driverPointsByDriverId,
 }: Props) {
   return (
     <section className={`tier-card tier-card--${tierColor}`}>
@@ -36,6 +39,11 @@ export function TierBucket({
           const driver = driversById[driverId];
           const active = selected.includes(driverId);
           const position = driverPositionByDriverId?.[driverId];
+          const hasPoints =
+            driverPointsByDriverId != null &&
+            Object.prototype.hasOwnProperty.call(driverPointsByDriverId, driverId);
+          const points = hasPoints ? driverPointsByDriverId?.[driverId] : undefined;
+          const showMutedPoints = !active && points != null;
           return (
             <button
               key={driverId}
@@ -51,9 +59,18 @@ export function TierBucket({
               {active ? (
                 position != null ? (
                   <span className="tier-driver-position" aria-label={`Position ${position}`}>P{position}</span>
+                ) : points != null ? (
+                  <span className="tier-driver-points" aria-label={`${points} points`}>{points}</span>
                 ) : (
                   <span className="tier-driver-check" aria-hidden>✓</span>
                 )
+              ) : showMutedPoints ? (
+                <span
+                  className="tier-driver-points tier-driver-points--muted"
+                  aria-label={`${points} points`}
+                >
+                  {points}
+                </span>
               ) : null}
             </button>
           );

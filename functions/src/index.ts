@@ -1,3 +1,4 @@
+import { Timestamp } from "firebase-admin/firestore";
 import { logger } from "firebase-functions/v2";
 import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
@@ -6,7 +7,6 @@ import { setGlobalOptions } from "firebase-functions/v2/options";
 import {
   assertAdminInLeague,
   db,
-  driversRef,
   getLeagueIds,
   leagueRef,
   membersRef,
@@ -19,24 +19,28 @@ import {
 import { ingestScheduleAndStandings, refreshRecentRaceResults } from "./ingest";
 import {
   fetchNascarLiveFeed,
-  fetchNascarLiveStagePoints,
-  getNascarRaceIdForLeagueRace,
   runNameMatchesRace,
 } from "./nascar-live";
-import { recomputeSeasonScores, rescoreRace } from "./scoring";
+import type { FetchLiveFeedResult } from "./nascar-live";
+import {
+  applyNascarLiveFeedToLeague,
+  syncLiveRaceForLeagues,
+} from "./live-sync";
+import { rescoreRace } from "./scoring";
 import { computeTiersForRace, recomputeTiersForUpcomingRaces } from "./tiers";
 import type {
   AdjustmentType,
-  DriverDoc,
-  LeagueDoc,
   MemberDoc,
   PickDoc,
   RaceDoc,
   RaceDriverPoints,
   TierDoc,
 } from "./types";
+import type {
+  UpdateLeagueSettingsRequest,
+  UpdateMemberPaidStatusRequest,
+} from "../../shared/callables";
 import {
-  assertNoDuplicates,
   pickId,
   requireAuthUid,
   requireNumber,
@@ -44,12 +48,21 @@ import {
   requireStringArray,
   toDocId,
 } from "./utils";
+import { validatePickAgainstTiers } from "./pick-validation";
 
 setGlobalOptions({
   region: "us-central1",
   memory: "512MiB",
   timeoutSeconds: 120,
 });
+
+const BASE_LOCK_CHECK_SCHEDULE = "every 15 minutes";
+const RACE_HOUR_LOCK_CHECK_SCHEDULE = "every 1 minutes";
+const RACE_HOUR_LOOKAHEAD_MS = 60 * 60 * 1000;
+const RACE_HOUR_LOOKBACK_MS = 15 * 60 * 1000;
+const LIVE_FEED_MATCH_WINDOW_FUTURE_MS = 8 * 60 * 60 * 1000;
+const LIVE_FEED_MATCH_WINDOW_PAST_MS = 12 * 60 * 60 * 1000;
+const LIVE_FEED_PICK_GUARD_LOOKAHEAD_MS = 24 * 60 * 60 * 1000;
 
 async function assertMember(leagueId: string, userId: string): Promise<MemberDoc> {
   const memberSnap = await membersRef(leagueId).doc(userId).get();
@@ -59,174 +72,346 @@ async function assertMember(leagueId: string, userId: string): Promise<MemberDoc
   return memberSnap.data() as MemberDoc;
 }
 
-function validatePickAgainstTiers(
-  selection: { tierA: string[]; tierB: string[]; tierC: string[] },
-  tiers: TierDoc,
-): void {
-  selection.tierA.forEach((driverId) => {
-    if (!tiers.tierA.includes(driverId)) {
-      throw new HttpsError("invalid-argument", `Driver ${driverId} is not in Tier A.`);
-    }
-  });
-
-  selection.tierB.forEach((driverId) => {
-    if (!tiers.tierB.includes(driverId)) {
-      throw new HttpsError("invalid-argument", `Driver ${driverId} is not in Tier B.`);
-    }
-  });
-
-  selection.tierC.forEach((driverId) => {
-    if (!tiers.tierC.includes(driverId)) {
-      throw new HttpsError("invalid-argument", `Driver ${driverId} is not in Tier C.`);
-    }
-  });
-
-  assertNoDuplicates(
-    [...selection.tierA, ...selection.tierB, ...selection.tierC],
-    "Pick tiers",
-  );
+function isLiveFeedRaceInProgress(feed: FetchLiveFeedResult): boolean {
+  return feed.lapNumber > 0 && feed.drivers.length > 0;
 }
 
-export const createLeague = onCall({ invoker: "public" }, async (request) => {
-  try {
-    const userId = requireAuthUid(request.auth?.uid);
-    logger.info("createLeague called", { userId });
-    
-    const leagueName = requireString(request.data?.name, "name");
-    const inviteCodeRaw = requireString(request.data?.inviteCode, "inviteCode");
-    const seasonYear = requireNumber(request.data?.seasonYear, "seasonYear");
-    const adminDisplayName =
-      typeof request.auth?.token?.name === "string"
-        ? request.auth.token.name
-        : typeof request.auth?.token?.email === "string"
-          ? request.auth.token.email
-          : "League Admin";
-    const payoutConfigText =
-      typeof request.data?.payoutConfigText === "string"
-        ? request.data.payoutConfigText.trim()
-        : "";
+function getLeagueIdFromRacePath(path: string): string | null {
+  const segments = path.split("/");
+  if (segments.length !== 4) return null;
+  if (segments[0] !== "leagues" || segments[2] !== "races") return null;
+  return segments[1];
+}
 
-    const inviteCode = inviteCodeRaw.toUpperCase();
-    logger.info("Checking for existing league with invite code", { inviteCode });
-    
-    const existingLeague = await db
-      .collection("leagues")
-      .where("inviteCode", "==", inviteCode)
-      .limit(1)
-      .get();
+async function getLeagueIdsWithScheduledRaceLockWindow(
+  windowStartMs: number,
+  windowEndMs: number,
+): Promise<string[]> {
+  const raceSnap = await db
+    .collectionGroup("races")
+    .where("lockTime", ">=", Timestamp.fromMillis(windowStartMs))
+    .where("lockTime", "<=", Timestamp.fromMillis(windowEndMs))
+    .get();
 
-    if (!existingLeague.empty) {
-      throw new HttpsError("already-exists", "Invite code is already in use.");
-    }
+  const leagueIds = new Set<string>();
+  raceSnap.forEach((raceDocSnap) => {
+    const race = raceDocSnap.data() as Partial<RaceDoc>;
+    if (race.status !== "scheduled") return;
+    const leagueId = getLeagueIdFromRacePath(raceDocSnap.ref.path);
+    if (leagueId) leagueIds.add(leagueId);
+  });
+  return Array.from(leagueIds);
+}
 
-    const leagueDocRef = db.collection("leagues").doc();
-    logger.info("Creating league document", { leagueId: leagueDocRef.id });
+async function lockRaceAndSubmittedPicks(
+  leagueId: string,
+  raceId: string,
+  source: string,
+): Promise<void> {
+  const now = nowTimestamp();
+  await racesRef(leagueId).doc(raceId).set(
+    {
+      status: "locked",
+      lastSyncedAt: now,
+    },
+    { merge: true },
+  );
 
-    await leagueDocRef.set({
-      name: leagueName,
-      seasonYear,
-      inviteCode,
-      payoutConfigText,
-      lockBehavior: "race_start",
-      createdAt: nowTimestamp(),
+  const picksSnap = await picksRef(leagueId)
+    .where("raceId", "==", raceId)
+    .where("lockedAt", "==", null)
+    .get();
+
+  const writeOps: Promise<FirebaseFirestore.WriteResult>[] = [];
+  picksSnap.forEach((pickDocSnap) => {
+    writeOps.push(
+      picksRef(leagueId).doc(pickDocSnap.id).set(
+        {
+          lockedAt: now,
+          updatedAt: now,
+        },
+        { merge: true },
+      ),
+    );
+  });
+  await Promise.all(writeOps);
+  await rescoreRace(leagueId, raceId);
+  logger.info("Race picks locked", {
+    leagueId,
+    raceId,
+    source,
+    picksLocked: picksSnap.size,
+  });
+}
+
+async function lockDueRacesForLeague(
+  leagueId: string,
+  now: Timestamp,
+): Promise<number> {
+  const raceSnap = await racesRef(leagueId)
+    .where("status", "==", "scheduled")
+    .where("lockTime", "<=", now)
+    .get();
+
+  for (const raceDocSnap of raceSnap.docs) {
+    await lockRaceAndSubmittedPicks(leagueId, raceDocSnap.id, "lock-time-reached");
+  }
+  return raceSnap.size;
+}
+
+function findRaceToLockFromLiveFeed(
+  raceDocs: FirebaseFirestore.QueryDocumentSnapshot[],
+  liveFeed: FetchLiveFeedResult,
+): FirebaseFirestore.QueryDocumentSnapshot | null {
+  if (!isLiveFeedRaceInProgress(liveFeed)) return null;
+  const nowMs = Date.now();
+  const candidates = raceDocs
+    .map((raceDocSnap) => {
+      const race = raceDocSnap.data() as RaceDoc;
+      return {
+        raceDocSnap,
+        race,
+        startTimeMs: race.startTime.toMillis(),
+      };
+    })
+    .filter(
+      ({ startTimeMs }) =>
+        startTimeMs >= nowMs - LIVE_FEED_MATCH_WINDOW_PAST_MS &&
+        startTimeMs <= nowMs + LIVE_FEED_MATCH_WINDOW_FUTURE_MS,
+    );
+
+  if (candidates.length === 0) return null;
+
+  const matchesByName = candidates.filter(({ race }) =>
+    runNameMatchesRace(liveFeed.runName, race.name),
+  );
+  const pool =
+    matchesByName.length > 0
+      ? matchesByName
+      : candidates.length === 1
+        ? candidates
+        : [];
+  if (pool.length === 0) return null;
+
+  pool.sort(
+    (left, right) =>
+      Math.abs(left.startTimeMs - nowMs) - Math.abs(right.startTimeMs - nowMs) ||
+      left.startTimeMs - right.startTimeMs,
+  );
+  return pool[0].raceDocSnap;
+}
+
+async function lockRaceFromLiveFeedForLeague(
+  leagueId: string,
+  liveFeed: FetchLiveFeedResult,
+): Promise<number> {
+  const scheduledSnap = await racesRef(leagueId).where("status", "==", "scheduled").get();
+  if (scheduledSnap.empty) return 0;
+  const targetRaceDoc = findRaceToLockFromLiveFeed(scheduledSnap.docs, liveFeed);
+  if (!targetRaceDoc) return 0;
+
+  await lockRaceAndSubmittedPicks(leagueId, targetRaceDoc.id, "live-feed");
+  return 1;
+}
+
+async function runLockCycle(options: {
+  source: string;
+  dueLockLeagueIds: string[];
+  liveFeed: FetchLiveFeedResult | null;
+  liveFeedLeagueIds?: string[];
+}): Promise<void> {
+  const scopeByLeague = new Map<string, { due: boolean; live: boolean }>();
+
+  options.dueLockLeagueIds.forEach((leagueId) => {
+    const scope = scopeByLeague.get(leagueId) ?? { due: false, live: false };
+    scope.due = true;
+    scopeByLeague.set(leagueId, scope);
+  });
+
+  if (options.liveFeed) {
+    const liveLeagueIds =
+      options.liveFeedLeagueIds && options.liveFeedLeagueIds.length > 0
+        ? options.liveFeedLeagueIds
+        : options.dueLockLeagueIds;
+    liveLeagueIds.forEach((leagueId) => {
+      const scope = scopeByLeague.get(leagueId) ?? { due: false, live: false };
+      scope.live = true;
+      scopeByLeague.set(leagueId, scope);
     });
-    logger.info("League document created successfully");
+  }
 
-    logger.info("Creating member document", { leagueId: leagueDocRef.id, userId });
-    await membersRef(leagueDocRef.id).doc(userId).set({
+  if (scopeByLeague.size === 0) {
+    logger.info("Scheduled lock cycle skipped (no leagues in scope)", {
+      source: options.source,
+    });
+    return;
+  }
+
+  const now = nowTimestamp();
+  let lockedByTime = 0;
+  let lockedByLiveFeed = 0;
+  for (const [leagueId, scope] of scopeByLeague) {
+    if (scope.due) {
+      lockedByTime += await lockDueRacesForLeague(leagueId, now);
+    }
+    if (scope.live && options.liveFeed) {
+      lockedByLiveFeed += await lockRaceFromLiveFeedForLeague(leagueId, options.liveFeed);
+    }
+  }
+
+  logger.info("Scheduled lock cycle complete", {
+    source: options.source,
+    leaguesChecked: scopeByLeague.size,
+    dueLockLeagues: options.dueLockLeagueIds.length,
+    liveFeedLeagues: options.liveFeedLeagueIds?.length ?? 0,
+    lockedByTime,
+    lockedByLiveFeed,
+  });
+}
+
+function withHttpsErrorHandling<TResponse>(
+  callableName: string,
+  handler: (request: any) => Promise<TResponse>,
+): (request: any) => Promise<TResponse> {
+  return async (request) => {
+    try {
+      return await handler(request);
+    } catch (error) {
+      if (error instanceof HttpsError) throw error;
+      logger.error(`${callableName} failed`, {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      throw new HttpsError("internal", "Internal server error.");
+    }
+  };
+}
+
+export const createLeague = onCall({ invoker: "public" }, withHttpsErrorHandling("createLeague", async (request) => {
+  const userId = requireAuthUid(request.auth?.uid);
+  logger.info("createLeague called", { userId });
+
+  const leagueName = requireString(request.data?.name, "name");
+  const inviteCodeRaw = requireString(request.data?.inviteCode, "inviteCode");
+  const seasonYear = requireNumber(request.data?.seasonYear, "seasonYear");
+  const adminDisplayName =
+    typeof request.auth?.token?.name === "string"
+      ? request.auth.token.name
+      : typeof request.auth?.token?.email === "string"
+        ? request.auth.token.email
+        : "League Admin";
+  const payoutConfigText =
+    typeof request.data?.payoutConfigText === "string"
+      ? request.data.payoutConfigText.trim()
+      : "";
+
+  const inviteCode = inviteCodeRaw.toUpperCase();
+  logger.info("Checking for existing league with invite code", { inviteCode });
+
+  const existingLeague = await db
+    .collection("leagues")
+    .where("inviteCode", "==", inviteCode)
+    .limit(1)
+    .get();
+
+  if (!existingLeague.empty) {
+    throw new HttpsError("already-exists", "Invite code is already in use.");
+  }
+
+  const leagueDocRef = db.collection("leagues").doc();
+  logger.info("Creating league document", { leagueId: leagueDocRef.id });
+
+  await leagueDocRef.set({
+    name: leagueName,
+    seasonYear,
+    inviteCode,
+    payoutConfigText,
+    lockBehavior: "race_start",
+    createdAt: nowTimestamp(),
+  });
+  logger.info("League document created successfully");
+
+  logger.info("Creating member document", { leagueId: leagueDocRef.id, userId });
+  await membersRef(leagueDocRef.id).doc(userId).set({
+    userId, // Store userId as field to enable collection group queries
+    displayName: adminDisplayName,
+    role: "admin",
+    paidStatus: "paid",
+    joinedAt: nowTimestamp(),
+  } satisfies MemberDoc);
+  logger.info("Member document created with userId field", { leagueId: leagueDocRef.id, userId });
+  logger.info("Member document created successfully");
+
+  return {
+    leagueId: leagueDocRef.id,
+    inviteCode,
+  };
+}));
+
+export const joinLeagueByInvite = onCall({ invoker: "public" }, withHttpsErrorHandling("joinLeagueByInvite", async (request) => {
+  const userId = requireAuthUid(request.auth?.uid);
+  logger.info("joinLeagueByInvite called", { userId });
+
+  const inviteCode = requireString(request.data?.inviteCode, "inviteCode").toUpperCase();
+  const clientDisplayName = requireString(request.data?.displayName, "displayName");
+
+  logger.info("Looking up league by invite code", { inviteCode });
+  const leagueSnap = await db
+    .collection("leagues")
+    .where("inviteCode", "==", inviteCode)
+    .limit(1)
+    .get();
+
+  if (leagueSnap.empty) {
+    throw new HttpsError("not-found", "Invite code not found.");
+  }
+
+  const leagueDoc = leagueSnap.docs[0];
+  const leagueId = leagueDoc.id;
+  logger.info("League found", { leagueId });
+
+  const memberDocRef = membersRef(leagueId).doc(userId);
+  const memberDoc = await memberDocRef.get();
+
+  let displayName = clientDisplayName.trim();
+  if (!displayName) {
+    const userEmail = typeof request.auth?.token?.email === "string" ? request.auth.token.email : "";
+    displayName = userEmail || "Player";
+  }
+
+  if (!memberDoc.exists) {
+    logger.info("Creating member document", { leagueId, userId, displayName });
+    await memberDocRef.set({
       userId, // Store userId as field to enable collection group queries
-      displayName: adminDisplayName,
-      role: "admin",
-      paidStatus: "paid",
+      displayName,
+      role: "player",
+      paidStatus: "unpaid",
       joinedAt: nowTimestamp(),
     } satisfies MemberDoc);
-    logger.info("Member document created with userId field", { leagueId: leagueDocRef.id, userId });
     logger.info("Member document created successfully");
-
-    return {
-      leagueId: leagueDocRef.id,
-      inviteCode,
-    };
-  } catch (error) {
-    logger.error("Error in createLeague", { error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined });
-    if (error instanceof HttpsError) {
-      throw error;
-    }
-    throw new HttpsError("internal", `Failed to create league: ${error instanceof Error ? error.message : String(error)}`);
+  } else {
+    logger.info("User already a member", { leagueId, userId });
+    displayName = (memberDoc.data() as MemberDoc).displayName;
   }
-});
 
-export const joinLeagueByInvite = onCall({ invoker: "public" }, async (request) => {
-  try {
-    const userId = requireAuthUid(request.auth?.uid);
-    logger.info("joinLeagueByInvite called", { userId });
+  logger.info("Updating user document", { userId });
+  await db.collection("users").doc(userId).set(
+    {
+      displayName,
+      updatedAt: nowTimestamp(),
+    },
+    { merge: true },
+  );
+  logger.info("User document updated successfully");
 
-    const inviteCode = requireString(request.data?.inviteCode, "inviteCode").toUpperCase();
-    const clientDisplayName = requireString(request.data?.displayName, "displayName");
+  return { leagueId, displayName };
+}));
 
-    logger.info("Looking up league by invite code", { inviteCode });
-    const leagueSnap = await db
-      .collection("leagues")
-      .where("inviteCode", "==", inviteCode)
-      .limit(1)
-      .get();
-
-    if (leagueSnap.empty) {
-      throw new HttpsError("not-found", "Invite code not found.");
-    }
-
-    const leagueDoc = leagueSnap.docs[0];
-    const leagueId = leagueDoc.id;
-    logger.info("League found", { leagueId });
-
-    const memberDocRef = membersRef(leagueId).doc(userId);
-    const memberDoc = await memberDocRef.get();
-
-    let displayName = clientDisplayName.trim();
-    if (!displayName) {
-      const userEmail = typeof request.auth?.token?.email === "string" ? request.auth.token.email : "";
-      displayName = userEmail || "Player";
-    }
-
-    if (!memberDoc.exists) {
-      logger.info("Creating member document", { leagueId, userId, displayName });
-      await memberDocRef.set({
-        userId, // Store userId as field to enable collection group queries
-        displayName,
-        role: "player",
-        paidStatus: "unpaid",
-        joinedAt: nowTimestamp(),
-      } satisfies MemberDoc);
-      logger.info("Member document created successfully");
-    } else {
-      logger.info("User already a member", { leagueId, userId });
-      displayName = (memberDoc.data() as MemberDoc).displayName;
-    }
-
-    logger.info("Updating user document", { userId });
-    await db.collection("users").doc(userId).set(
-      {
-        displayName,
-        updatedAt: nowTimestamp(),
-      },
-      { merge: true },
-    );
-    logger.info("User document updated successfully");
-
-    return { leagueId, displayName };
-  } catch (error) {
-    logger.error("Error in joinLeagueByInvite", { error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined });
-    if (error instanceof HttpsError) {
-      throw error;
-    }
-    throw new HttpsError("internal", `Failed to join league: ${error instanceof Error ? error.message : String(error)}`);
-  }
-});
-
-export const savePick = onCall({ invoker: "public" }, async (request) => {
+export const savePick = onCall({ invoker: "public" }, withHttpsErrorHandling("savePick", async (request) => {
   const userId = requireAuthUid(request.auth?.uid);
   const leagueId = requireString(request.data?.leagueId, "leagueId");
   const raceId = requireString(request.data?.raceId, "raceId");
+  logger.info("savePick called", { leagueId, raceId, userId });
 
   await assertMember(leagueId, userId);
 
@@ -249,8 +434,20 @@ export const savePick = onCall({ invoker: "public" }, async (request) => {
   }
 
   const race = raceSnap.data() as RaceDoc;
-  if (race.status !== "scheduled" || race.lockTime.toMillis() <= Date.now()) {
+  const nowMs = Date.now();
+  if (race.status !== "scheduled" || race.lockTime.toMillis() <= nowMs) {
     throw new HttpsError("failed-precondition", "Picks are locked for this race.");
+  }
+  if (race.lockTime.toMillis() - nowMs <= LIVE_FEED_PICK_GUARD_LOOKAHEAD_MS) {
+    const liveFeed = await fetchNascarLiveFeed();
+    if (
+      liveFeed &&
+      isLiveFeedRaceInProgress(liveFeed) &&
+      runNameMatchesRace(liveFeed.runName, race.name)
+    ) {
+      await lockRaceAndSubmittedPicks(leagueId, raceId, "save-pick-live-feed-guard");
+      throw new HttpsError("failed-precondition", "Picks are locked for this race.");
+    }
   }
 
   const selection = {
@@ -272,34 +469,91 @@ export const savePick = onCall({ invoker: "public" }, async (request) => {
   await picksRef(leagueId).doc(pickId(raceId, userId)).set(pick, { merge: true });
 
   return { ok: true };
-});
+}));
 
-export const computeRaceTiers = onCall({ invoker: "public" }, async (request) => {
+export const computeRaceTiers = onCall({ invoker: "public" }, withHttpsErrorHandling("computeRaceTiers", async (request) => {
   const userId = requireAuthUid(request.auth?.uid);
   const leagueId = requireString(request.data?.leagueId, "leagueId");
   const raceId = requireString(request.data?.raceId, "raceId");
+  logger.info("computeRaceTiers called", { leagueId, raceId, userId });
 
   await assertAdminInLeague(leagueId, userId);
   await computeTiersForRace(leagueId, raceId);
 
   return { ok: true };
-});
+}));
 
-export const manualRefreshData = onCall({ invoker: "public" }, async (request) => {
+export const manualRefreshData = onCall({ invoker: "public" }, withHttpsErrorHandling("manualRefreshData", async (request) => {
   const userId = requireAuthUid(request.auth?.uid);
   const leagueId = requireString(request.data?.leagueId, "leagueId");
+  logger.info("manualRefreshData called", { leagueId, userId });
 
   await assertAdminInLeague(leagueId, userId);
   await ingestScheduleAndStandings(leagueId);
-  await refreshRecentRaceResults(leagueId, 7);
+  // Manual refresh should backfill official results for the full season.
+  await refreshRecentRaceResults(leagueId, 365);
 
   return { ok: true };
-});
+}));
 
-export const manualUpsertRacePoints = onCall({ invoker: "public" }, async (request) => {
+export const updateLeagueSettings = onCall({ invoker: "public" }, withHttpsErrorHandling("updateLeagueSettings", async (request) => {
+  const data = (request.data ?? {}) as Partial<UpdateLeagueSettingsRequest>;
+  const userId = requireAuthUid(request.auth?.uid);
+  const leagueId = requireString(data.leagueId, "leagueId");
+  logger.info("updateLeagueSettings called", { leagueId, userId });
+  await assertAdminInLeague(leagueId, userId);
+
+  const name = requireString(data.name, "name");
+  const seasonYear = requireNumber(data.seasonYear, "seasonYear");
+  const payoutConfigText =
+    typeof data.payoutConfigText === "string"
+      ? data.payoutConfigText.trim()
+      : "";
+
+  await leagueRef(leagueId).set(
+    {
+      name,
+      seasonYear,
+      payoutConfigText,
+      updatedAt: nowTimestamp(),
+    },
+    { merge: true },
+  );
+  return { ok: true };
+}));
+
+export const updateMemberPaidStatus = onCall({ invoker: "public" }, withHttpsErrorHandling("updateMemberPaidStatus", async (request) => {
+  const data = (request.data ?? {}) as Partial<UpdateMemberPaidStatusRequest>;
+  const userId = requireAuthUid(request.auth?.uid);
+  const leagueId = requireString(data.leagueId, "leagueId");
+  const memberUserId = requireString(data.userId, "userId");
+  const paidStatus = requireString(data.paidStatus, "paidStatus");
+  logger.info("updateMemberPaidStatus called", {
+    leagueId,
+    memberUserId,
+    paidStatus,
+    userId,
+  });
+  await assertAdminInLeague(leagueId, userId);
+  if (paidStatus !== "paid" && paidStatus !== "unpaid") {
+    throw new HttpsError("invalid-argument", "paidStatus must be 'paid' or 'unpaid'.");
+  }
+
+  await membersRef(leagueId).doc(memberUserId).set(
+    {
+      paidStatus,
+      updatedAt: nowTimestamp(),
+    },
+    { merge: true },
+  );
+  return { ok: true };
+}));
+
+export const manualUpsertRacePoints = onCall({ invoker: "public" }, withHttpsErrorHandling("manualUpsertRacePoints", async (request) => {
   const userId = requireAuthUid(request.auth?.uid);
   const leagueId = requireString(request.data?.leagueId, "leagueId");
   const raceId = requireString(request.data?.raceId, "raceId");
+  logger.info("manualUpsertRacePoints called", { leagueId, raceId, userId });
   const source =
     typeof request.data?.source === "string" && request.data.source.trim().length > 0
       ? request.data.source.trim()
@@ -335,13 +589,15 @@ export const manualUpsertRacePoints = onCall({ invoker: "public" }, async (reque
     },
     { merge: true },
   );
+  await rescoreRace(leagueId, raceId);
 
   return { ok: true };
-});
+}));
 
-export const addAdjustment = onCall({ invoker: "public" }, async (request) => {
+export const addAdjustment = onCall({ invoker: "public" }, withHttpsErrorHandling("addAdjustment", async (request) => {
   const userId = requireAuthUid(request.auth?.uid);
   const leagueId = requireString(request.data?.leagueId, "leagueId");
+  logger.info("addAdjustment called", { leagueId, userId });
   await assertAdminInLeague(leagueId, userId);
 
   const raceId = requireString(request.data?.raceId, "raceId");
@@ -371,224 +627,67 @@ export const addAdjustment = onCall({ invoker: "public" }, async (request) => {
       createdAt: nowTimestamp(),
       createdBy: userId,
     });
+  await rescoreRace(leagueId, raceId);
 
   return { ok: true };
-});
+}));
 
 export const lockPicksAtRaceStart = onSchedule(
   {
-    schedule: "every 1 minutes",
+    schedule: BASE_LOCK_CHECK_SCHEDULE,
     timeZone: "America/New_York",
     retryCount: 1,
   },
   async () => {
-    const now = nowTimestamp();
-    const leagueIds = await getLeagueIds();
+    const [leagueIds, liveFeed] = await Promise.all([
+      getLeagueIds(),
+      fetchNascarLiveFeed(),
+    ]);
 
-    for (const leagueId of leagueIds) {
-      const raceSnap = await racesRef(leagueId)
-        .where("status", "==", "scheduled")
-        .where("lockTime", "<=", now)
-        .get();
-
-      for (const raceDocSnap of raceSnap.docs) {
-        await racesRef(leagueId).doc(raceDocSnap.id).set(
-          {
-            status: "locked",
-            lastSyncedAt: nowTimestamp(),
-          },
-          { merge: true },
-        );
-
-        const picksSnap = await picksRef(leagueId)
-          .where("raceId", "==", raceDocSnap.id)
-          .where("lockedAt", "==", null)
-          .get();
-
-        const writeOps: Promise<FirebaseFirestore.WriteResult>[] = [];
-        picksSnap.forEach((pickDocSnap) => {
-          writeOps.push(
-            picksRef(leagueId).doc(pickDocSnap.id).set(
-              {
-                lockedAt: nowTimestamp(),
-                updatedAt: nowTimestamp(),
-              },
-              { merge: true },
-            ),
-          );
-        });
-
-        await Promise.all(writeOps);
-        await rescoreRace(leagueId, raceDocSnap.id);
-      }
-    }
-
-    logger.info("Scheduled lock cycle complete");
+    await runLockCycle({
+      source: "baseline",
+      dueLockLeagueIds: leagueIds,
+      liveFeed,
+      liveFeedLeagueIds: leagueIds,
+    });
   },
 );
 
-type LiveSyncResult = { updated: true } | { updated: false; reason: string };
+export const lockPicksAtRaceStartRaceHour = onSchedule(
+  {
+    schedule: RACE_HOUR_LOCK_CHECK_SCHEDULE,
+    timeZone: "America/New_York",
+    retryCount: 1,
+  },
+  async () => {
+    const nowMs = Date.now();
+    const [dueLockLeagueIds, liveFeed] = await Promise.all([
+      getLeagueIdsWithScheduledRaceLockWindow(
+        nowMs - RACE_HOUR_LOOKBACK_MS,
+        nowMs + RACE_HOUR_LOOKAHEAD_MS,
+      ),
+      fetchNascarLiveFeed(),
+    ]);
 
-async function applyNascarLiveFeedToLeague(leagueId: string): Promise<LiveSyncResult> {
-  const feed = await fetchNascarLiveFeed();
-
-  const [leagueSnap, lockedSnap, scheduledSnap, driversSnap] = await Promise.all([
-    leagueRef(leagueId).get(),
-    racesRef(leagueId).where("status", "==", "locked").get(),
-    racesRef(leagueId).where("status", "==", "scheduled").get(),
-    driversRef(leagueId).get(),
-  ]);
-  const league = leagueSnap.exists ? (leagueSnap.data() as LeagueDoc) : null;
-  const seasonYear = league?.seasonYear;
-  const nowMs = Date.now();
-  const raceDocs = [...lockedSnap.docs, ...scheduledSnap.docs];
-
-  if (raceDocs.length === 0) {
-    return { updated: false, reason: "No races in this league." };
-  }
-
-  const singleRaceInLeague = raceDocs.length === 1;
-  const theOnlyRaceId = singleRaceInLeague ? raceDocs[0].id : null;
-  const pastRaces = raceDocs.filter((d) => (d.data() as RaceDoc).startTime.toMillis() <= nowMs);
-  const mostRecentStarted =
-    pastRaces.length > 0
-      ? pastRaces.reduce((a, b) =>
-          (a.data() as RaceDoc).startTime.toMillis() >= (b.data() as RaceDoc).startTime.toMillis() ? a : b,
-        )
-      : null;
-  const futureRaces = raceDocs.filter((d) => (d.data() as RaceDoc).startTime.toMillis() > nowMs);
-  const nextUpcoming =
-    futureRaces.length > 0
-      ? futureRaces.reduce((a, b) =>
-          (a.data() as RaceDoc).startTime.toMillis() <= (b.data() as RaceDoc).startTime.toMillis() ? a : b,
-        )
-      : null;
-  const fallbackRaceId = mostRecentStarted?.id ?? nextUpcoming?.id ?? theOnlyRaceId;
-
-  // When live feed is unavailable, try stage points only using a known NASCAR race_id for the current league race.
-  if (!feed) {
-    const targetRaceId = fallbackRaceId;
-    if (!targetRaceId || seasonYear == null) {
-      return { updated: false, reason: "Live feed unavailable." };
-    }
-    const nascarRaceId = getNascarRaceIdForLeagueRace(targetRaceId);
-    if (nascarRaceId == null) {
-      return {
-        updated: false,
-        reason: "Live feed unavailable and no known NASCAR race ID for this race (add to NASCAR_RACE_ID_BY_LEAGUE_RACE for stage-only refresh).",
-      };
-    }
-    const stagePointsByVehicle = await fetchNascarLiveStagePoints(seasonYear, nascarRaceId);
-    if (stagePointsByVehicle.size === 0) {
-      return { updated: false, reason: "Live feed unavailable; stage points API returned no data." };
-    }
-    const numberToDriverId = buildNumberToDriverId(driversSnap);
-    const byDriverId = new Map<string, { basePoints: number; runningPosition?: number }>();
-    for (const [vehicleNum, stagePts] of stagePointsByVehicle) {
-      const driverId = resolveDriverId(vehicleNum, numberToDriverId);
-      if (driverId) byDriverId.set(driverId, { basePoints: stagePts });
-    }
-    const drivers: RaceDriverPoints[] = Array.from(byDriverId.entries()).map(([driverId, { basePoints }]) => ({ driverId, basePoints }));
-    if (drivers.length === 0) {
-      return { updated: false, reason: "No drivers matched by car number between stage data and league." };
-    }
-    const racePointsData: Record<string, unknown> = {
-      drivers,
-      source: "nascar-live",
-      lastSyncedAt: nowTimestamp(),
-    };
-    await racePointsRef(leagueId).doc(targetRaceId).set(racePointsData, { merge: true });
-    await rescoreRace(leagueId, targetRaceId);
-    logger.info("NASCAR live: applied stage points only (feed unavailable)", { leagueId, targetRaceId, nascarRaceId });
-    return { updated: true };
-  }
-
-  const stagePointsByVehicle =
-    feed.raceId != null && seasonYear != null
-      ? await fetchNascarLiveStagePoints(seasonYear, feed.raceId)
-      : new Map<string, number>();
-
-  const racesSnap = { docs: raceDocs };
-  const numberToDriverId = buildNumberToDriverId(driversSnap);
-
-  let updated: LiveSyncResult = { updated: false, reason: "No matching race found for this league." };
-  for (const raceDocSnap of racesSnap.docs) {
-    const race = raceDocSnap.data() as RaceDoc;
-    const raceId = raceDocSnap.id;
-    const nameMatches = runNameMatchesRace(feed.runName, race.name);
-    const isOnlyRace = theOnlyRaceId !== null && raceId === theOnlyRaceId;
-    const isFallback = fallbackRaceId !== null && raceId === fallbackRaceId;
-    const matchesNascarRaceId =
-      feed.raceId != null && getNascarRaceIdForLeagueRace(raceId) === feed.raceId;
-    const useThisRace = nameMatches || isOnlyRace || isFallback || matchesNascarRaceId;
-    if (!useThisRace) continue;
-
-    const byDriverId = new Map<string, { basePoints: number; runningPosition?: number }>();
-    for (const [vehicleNum, stagePts] of stagePointsByVehicle) {
-      const driverId = resolveDriverId(vehicleNum, numberToDriverId);
-      if (driverId) byDriverId.set(driverId, { basePoints: stagePts });
-    }
-    for (const fd of feed.drivers) {
-      const driverId = resolveDriverId(fd.vehicleNumber, numberToDriverId);
-      if (driverId) {
-        const stagePts = stagePointsByVehicle.get(fd.vehicleNumber.trim()) ?? stagePointsByVehicle.get(String(Number(fd.vehicleNumber))) ?? 0;
-        byDriverId.set(driverId, { basePoints: fd.basePoints + stagePts, runningPosition: fd.runningPosition });
+    let liveFeedLeagueIds: string[] = [];
+    if (liveFeed) {
+      liveFeedLeagueIds = await getLeagueIdsWithScheduledRaceLockWindow(
+        nowMs - LIVE_FEED_MATCH_WINDOW_PAST_MS,
+        nowMs + LIVE_FEED_MATCH_WINDOW_FUTURE_MS,
+      );
+      if (liveFeedLeagueIds.length === 0) {
+        liveFeedLeagueIds = await getLeagueIds();
       }
     }
 
-    const drivers: RaceDriverPoints[] = Array.from(byDriverId.entries()).map(([driverId, { basePoints, runningPosition }]) =>
-      runningPosition != null ? { driverId, basePoints, runningPosition } : { driverId, basePoints },
-    );
-    if (drivers.length === 0) {
-      updated = { updated: false, reason: "No drivers matched by car number between stage/feed and league." };
-      continue;
-    }
-
-    const racePointsData: Record<string, unknown> = {
-      drivers,
-      source: "nascar-live",
-      lastSyncedAt: nowTimestamp(),
-    };
-    if (feed.lapNumber != null) racePointsData.liveLapNumber = feed.lapNumber;
-    if (feed.lapsInRace != null) racePointsData.liveLapsInRace = feed.lapsInRace;
-    if (feed.lapsToGo != null) racePointsData.liveLapsToGo = feed.lapsToGo;
-    if (feed.stage) {
-      racePointsData.liveStage = {
-        stageNum: feed.stage.stageNum,
-        finishAtLap: feed.stage.finishAtLap,
-        lapsInStage: feed.stage.lapsInStage,
-      };
-    }
-    await racePointsRef(leagueId).doc(raceId).set(racePointsData, { merge: true });
-    await rescoreRace(leagueId, raceId);
-    return { updated: true };
-  }
-  return updated;
-}
-
-function buildNumberToDriverId(driversSnap: FirebaseFirestore.QuerySnapshot): Map<string, string> {
-  const numberToDriverId = new Map<string, string>();
-  driversSnap.forEach((docSnap) => {
-    const d = docSnap.data() as DriverDoc;
-    if (d.number != null && d.number !== "") {
-      const key = String(d.number).trim();
-      numberToDriverId.set(key, docSnap.id);
-      const num = Number(key);
-      if (!Number.isNaN(num)) numberToDriverId.set(String(num), docSnap.id);
-    }
-  });
-  return numberToDriverId;
-}
-
-function resolveDriverId(vehicleKey: string, numberToDriverId: Map<string, string>): string | null {
-  const k = vehicleKey.trim();
-  let id = numberToDriverId.get(k);
-  if (!id && k) {
-    const num = Number(k);
-    if (!Number.isNaN(num)) id = numberToDriverId.get(String(num)) ?? null;
-  }
-  return id ?? null;
-}
+    await runLockCycle({
+      source: "race-hour",
+      dueLockLeagueIds,
+      liveFeed,
+      liveFeedLeagueIds,
+    });
+  },
+);
 
 /** Sync live race points from NASCAR.com live feed for any league with a race in progress. */
 export const syncLiveRaceFromNascar = onSchedule(
@@ -602,9 +701,7 @@ export const syncLiveRaceFromNascar = onSchedule(
     if (!feed) return;
 
     const leagueIds = await getLeagueIds();
-    for (const leagueId of leagueIds) {
-      await applyNascarLiveFeedToLeague(leagueId);
-    }
+    await syncLiveRaceForLeagues(leagueIds, feed, 8);
     logger.info("NASCAR live sync cycle complete", {
       runName: feed.runName,
       lapNumber: feed.lapNumber,
@@ -613,13 +710,14 @@ export const syncLiveRaceFromNascar = onSchedule(
   },
 );
 
-export const syncLiveRaceNow = onCall({ invoker: "public" }, async (request) => {
+export const syncLiveRaceNow = onCall({ invoker: "public" }, withHttpsErrorHandling("syncLiveRaceNow", async (request) => {
   const userId = requireAuthUid(request.auth?.uid);
   const leagueId = requireString(request.data?.leagueId, "leagueId");
+  logger.info("syncLiveRaceNow called", { leagueId, userId });
   await assertAdminInLeague(leagueId, userId);
   const result = await applyNascarLiveFeedToLeague(leagueId);
   return result.updated ? { ok: true, updated: true } : { ok: true, updated: false, reason: result.reason };
-});
+}));
 
 export const ingestLeagueDataDaily = onSchedule(
   {
@@ -654,61 +752,5 @@ export const onStandingsSnapshotWrite = onDocumentWritten(
   async (event) => {
     const leagueId = event.params.leagueId;
     await recomputeTiersForUpcomingRaces(leagueId);
-  },
-);
-
-export const onRacePointsWrite = onDocumentWritten(
-  "leagues/{leagueId}/racePoints/{raceId}",
-  async (event) => {
-    if (!event.data?.after.exists) {
-      return;
-    }
-    await rescoreRace(event.params.leagueId, event.params.raceId);
-  },
-);
-
-export const onAdjustmentWrite = onDocumentWritten(
-  "leagues/{leagueId}/adjustments/{adjustmentId}",
-  async (event) => {
-    const afterData = event.data?.after.data();
-    const beforeData = event.data?.before.data();
-    const raceId = (afterData?.raceId || beforeData?.raceId) as string | undefined;
-    if (!raceId) {
-      return;
-    }
-
-    await rescoreRace(event.params.leagueId, raceId);
-  },
-);
-
-export const onPickWrite = onDocumentWritten(
-  "leagues/{leagueId}/picks/{pickDocumentId}",
-  async (event) => {
-    const pickAfter = event.data?.after.data() as PickDoc | undefined;
-    const pickBefore = event.data?.before.data() as PickDoc | undefined;
-    const raceId = pickAfter?.raceId || pickBefore?.raceId;
-    if (!raceId) {
-      return;
-    }
-
-    await rescoreRace(event.params.leagueId, raceId);
-  },
-);
-
-export const onWeeklyScoreWrite = onDocumentWritten(
-  "leagues/{leagueId}/weeklyScores/{weeklyScoreId}",
-  async (event) => {
-    if (!event.data?.after.exists && !event.data?.before.exists) {
-      return;
-    }
-
-    const before = event.data?.before.data() as { weeklyTotal?: number } | undefined;
-    const after = event.data?.after.data() as { weeklyTotal?: number } | undefined;
-
-    if (before?.weeklyTotal === after?.weeklyTotal) {
-      return;
-    }
-
-    await recomputeSeasonScores(event.params.leagueId);
   },
 );

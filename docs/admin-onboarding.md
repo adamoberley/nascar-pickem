@@ -19,8 +19,12 @@
 3. If points are wrong/missing:
    - Use Manual Results Override
 4. If a penalty/correction is announced later:
-   - Add adjustment
-   - Scores and ranks update automatically
+- Add adjustment
+- Scores and ranks update automatically
+
+## Sprint (segment) leaderboard
+
+The Standings tab includes a **sprint** (monthly segment) leaderboard. Races are grouped by calendar month (February–August). Sprint payouts are configurable in `web/src/lib/sprint-config.ts` (and iOS `StandingsView.sprintConfigs`). The payout notes in League Settings can describe overall and sprint payouts.
 
 ## What is Automatic
 
@@ -29,6 +33,11 @@
 - Weekly score recomputation
 - Season leaderboard updates
 - Scheduled data refresh and post-race re-checks
+
+## Admin UI actions
+
+- **League Settings** — Update league name, season year, payout notes (calls `updateLeagueSettings`).
+- **Member paid/unpaid** — Toggle paid status per member (calls `updateMemberPaidStatus`).
 
 ## Manual Fallbacks
 

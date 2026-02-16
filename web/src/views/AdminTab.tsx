@@ -23,6 +23,7 @@ interface Props {
   setAdminMessage: (v: string) => void;
   monitorRaceId: string | null;
   raceMonitorPicksState: { data: PickDoc[] };
+  monitorRaceDriverPointsByDriverId: Record<string, number>;
   membersState: { data: MemberWithId[] };
   expandedPickUserId: string | null;
   setExpandedPickUserId: (v: string | null) => void;
@@ -65,6 +66,7 @@ export function AdminTab({
   setAdminMessage,
   monitorRaceId,
   raceMonitorPicksState,
+  monitorRaceDriverPointsByDriverId,
   membersState,
   expandedPickUserId,
   setExpandedPickUserId,
@@ -82,6 +84,18 @@ export function AdminTab({
   adminMessage,
   adminError,
 }: Props) {
+  const monitorDriverPointRows = Object.entries(monitorRaceDriverPointsByDriverId)
+    .map(([driverId, points]) => ({
+      driverId,
+      points,
+    }))
+    .sort((a, b) => {
+      if (b.points !== a.points) return b.points - a.points;
+      const aName = driversById[a.driverId]?.name ?? a.driverId;
+      const bName = driversById[b.driverId]?.name ?? b.driverId;
+      return aName.localeCompare(bName);
+    });
+
   return (
     <section className="panel wide">
       <h2>Admin Dashboard</h2>
@@ -183,6 +197,7 @@ export function AdminTab({
                             driverIds={pick.tierA}
                             driversById={driversById}
                             tierColor="yellow"
+                            driverPointsByDriverId={monitorRaceDriverPointsByDriverId}
                           />
                           <PicksTierSummary
                             title="Tier B"
@@ -190,6 +205,7 @@ export function AdminTab({
                             driverIds={pick.tierB}
                             driversById={driversById}
                             tierColor="red"
+                            driverPointsByDriverId={monitorRaceDriverPointsByDriverId}
                           />
                           <PicksTierSummary
                             title="Tier C"
@@ -197,6 +213,7 @@ export function AdminTab({
                             driverIds={pick.tierC}
                             driversById={driversById}
                             tierColor="blue"
+                            driverPointsByDriverId={monitorRaceDriverPointsByDriverId}
                           />
                         </div>
                       ) : null}
@@ -216,6 +233,24 @@ export function AdminTab({
             </ul>
           </div>
         </div>
+      </article>
+
+      <article className="callout">
+        <h4>Driver Points <span className="admin-heading-meta">({monitorRaceId ?? "No race"})</span></h4>
+        {monitorDriverPointRows.length ? (
+          <ul className="live-driver-points-list">
+            {monitorDriverPointRows.map((entry) => (
+              <li key={entry.driverId} className="live-driver-points-row">
+                <span className="live-driver-points-name">
+                  {driversById[entry.driverId]?.name ?? entry.driverId}
+                </span>
+                <span className="live-driver-points-pts">{entry.points}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="race-meta">No race points loaded for this race yet.</p>
+        )}
       </article>
 
       <article className="callout">
@@ -519,11 +554,17 @@ export function AdminTab({
                       onClick={() => {
                         if (!selectedLeagueId) return;
                         const nextPaidStatus = member.paidStatus === "paid" ? "unpaid" : "paid";
+                        setAdminBusy(true);
+                        setAdminError(null);
+                        setAdminMessage("");
                         void setMemberPaidStatus(
                           selectedLeagueId,
                           member.id,
                           nextPaidStatus,
-                        );
+                        )
+                          .then(() => setAdminMessage(`Marked ${member.displayName} as ${nextPaidStatus}.`))
+                          .catch((error) => setAdminError((error as Error).message))
+                          .finally(() => setAdminBusy(false));
                       }}
                     >
                       Toggle Paid

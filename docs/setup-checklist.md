@@ -32,7 +32,7 @@ npm install --workspaces
 npm run build --workspaces
 ```
 
-Functions use **esbuild** for the build (fast); type-checking is still `npm run lint` in `functions/` (tsc).
+Functions use **esbuild** for the build (fast); type-checking is `npm run lint` (tsc). Run `npm run test` to execute unit tests (Vitest) before deploy.
 
 ## 5. Deploy backend + hosting
 

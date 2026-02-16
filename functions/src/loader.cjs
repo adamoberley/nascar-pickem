@@ -11,18 +11,17 @@ const FUNCTION_NAMES = [
   "savePick",
   "computeRaceTiers",
   "manualRefreshData",
+  "updateLeagueSettings",
+  "updateMemberPaidStatus",
   "manualUpsertRacePoints",
   "syncLiveRaceNow",
   "addAdjustment",
   "lockPicksAtRaceStart",
+  "lockPicksAtRaceStartRaceHour",
   "ingestLeagueDataDaily",
   "refreshRaceResults",
   "syncLiveRaceFromNascar",
   "onStandingsSnapshotWrite",
-  "onRacePointsWrite",
-  "onAdjustmentWrite",
-  "onPickWrite",
-  "onWeeklyScoreWrite",
 ];
 
 let bundle;

@@ -1,0 +1,2120 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--text);
+  line-height: 1.5;
+  background: var(--bg);
+  font-family: var(--font-body);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5 {
+  margin: 0;
+  font-family: var(--font-display);
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+}
+
+p {
+  margin: 0;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  border: 0;
+  border-radius: 12px;
+  min-height: 44px;
+  padding: 0.62rem 1.02rem;
+  font-weight: 700;
+  color: #fff;
+  background: var(--nascar-red);
+  cursor: pointer;
+  transition: transform 0.15s ease, filter 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+button:hover:enabled {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+  box-shadow: none;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--focus) 72%, #fff);
+  outline-offset: 2px;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  min-height: 42px;
+  padding: 0.62rem 0.78rem;
+  color: var(--text);
+  background: var(--input-bg);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: color-mix(in srgb, var(--muted) 82%, transparent);
+}
+
+label {
+  font-weight: 700;
+  color: var(--panel-text);
+}
+
+textarea {
+  resize: vertical;
+  min-height: 90px;
+}
+
+.auth-layout {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: clamp(1rem, 4vw, 2rem);
+  background:
+    linear-gradient(180deg, rgb(0 0 0 / 94%), rgb(0 0 0 / 88%)),
+    repeating-linear-gradient(
+      -45deg,
+      rgb(250 250 250 / 4%) 0,
+      rgb(250 250 250 / 4%) 10px,
+      transparent 10px,
+      transparent 20px
+    ),
+    var(--nascar-black);
+}
+
+.loading-view {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+}
+
+.auth-panel,
+.setup-panel {
+  border-radius: 16px;
+  position: relative;
+  overflow: hidden;
+}
+
+.auth-panel::before,
+.setup-panel::before,
+.topbar::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 4px;
+  /* Stripe pattern: Yellow (1) → white (0.5) → yellow (1) → white (1) → red (1.6) → white (0.5) → red (1.6) → white (1) → blue (3) */
+  /* Total: 1 + 0.5 + 1 + 1 + 1.6 + 0.5 + 1.6 + 1 + 3 = 11.2x */
+  background: linear-gradient(
+    90deg,
+    var(--nascar-yellow) 0 8.93%,
+    var(--nascar-white) 8.93% 13.39%,
+    var(--nascar-yellow) 13.39% 22.32%,
+    var(--nascar-white) 22.32% 31.25%,
+    var(--nascar-red) 31.25% 45.54%,
+    var(--nascar-white) 45.54% 50%,
+    var(--nascar-red) 50% 64.29%,
+    var(--nascar-white) 64.29% 73.21%,
+    var(--nascar-blue) 73.21% 100%
+  );
+}
+
+.auth-panel {
+  width: min(100%, 540px);
+  padding: clamp(1.25rem, 3vw, 2rem);
+  color: var(--nascar-white);
+  border: 1px solid #2e3c4d;
+  box-shadow: 0 20px 42px rgba(0, 0, 0, 0.44);
+  background: rgb(0 0 0 / 96%);
+}
+
+.setup-panel {
+  background: rgb(0 0 0 / 96%);
+  color: var(--nascar-white);
+  border: 1px solid #2e3c4d;
+  box-shadow: 0 20px 42px rgba(0, 0, 0, 0.44);
+  padding: 1.35rem;
+}
+
+.setup-panel h2 {
+  color: var(--nascar-white);
+}
+
+.setup-description {
+  color: #d4dce5;
+  font-size: 0.9375rem;
+  margin: 0 0 0.875rem;
+  line-height: 1.4;
+}
+
+.setup-panel label {
+  color: #f2f6fa;
+  font-size: 0.94rem;
+}
+
+.setup-panel input,
+.setup-panel select,
+.setup-panel textarea {
+  border: 1px solid #465669;
+  background: rgb(0 0 0 / 92%);
+  color: #f7f9fb;
+}
+
+.setup-panel input::placeholder,
+.setup-panel textarea::placeholder {
+  color: #9eb0c4;
+}
+
+.setup-panel input:focus,
+.setup-panel select:focus,
+.setup-panel textarea:focus {
+  outline: none;
+  border-color: #6eaef2;
+  box-shadow: 0 0 0 3px rgb(110 174 242 / 30%);
+}
+
+.setup-panel .error-text,
+.setup-panel .success-text {
+  color: #ff9db2;
+}
+
+.setup-panel .success-text {
+  color: #72e0a8;
+}
+
+.setup-panel .setup-join-button {
+  background: var(--nascar-yellow);
+  color: var(--nascar-black);
+  box-shadow: 0 6px 14px rgb(243 208 62 / 24%);
+}
+
+.sign-out-row {
+  display: flex;
+  justify-content: center;
+}
+
+.sign-out-button {
+  width: auto;
+  min-width: 200px;
+}
+
+.auth-panel h1 {
+  color: var(--nascar-white);
+  font-size: clamp(2rem, 4vw, 2.6rem);
+}
+
+.auth-kicker {
+  font-family: var(--font-display);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #c4d2e0;
+  font-size: 0.92rem;
+}
+
+.auth-panel .subtitle {
+  color: #d4dce5;
+  margin-top: 0.34rem;
+}
+
+.auth-form {
+  margin-top: 1.08rem;
+  gap: 0.65rem;
+}
+
+.auth-form label {
+  color: #f2f6fa;
+  font-size: 0.94rem;
+}
+
+.auth-form input {
+  border: 1px solid #465669;
+  background: rgb(0 0 0 / 92%);
+  color: #f7f9fb;
+  border-radius: 12px;
+  padding: 0.72rem 0.84rem;
+}
+
+.auth-form input::placeholder {
+  color: #9eb0c4;
+}
+
+.auth-form input:focus {
+  outline: none;
+  border-color: #6eaef2;
+  box-shadow: 0 0 0 3px rgb(110 174 242 / 30%);
+}
+
+.auth-primary-button {
+  margin-top: 0.45rem;
+  min-height: 48px;
+  font-size: 1.04rem;
+}
+
+.auth-mode-toggle {
+  min-height: 44px;
+  background: transparent;
+  border: 1px solid #3e4f62;
+  color: var(--nascar-white);
+  box-shadow: none;
+}
+
+.auth-mode-toggle:hover:enabled {
+  background: rgb(250 250 250 / 8%);
+}
+
+.auth-panel .error-text {
+  color: #ff9db2;
+  margin-top: 0.8rem;
+}
+
+.auth-panel .success-text {
+  color: #72e0a8;
+  margin-top: 0.8rem;
+}
+
+.auth-panel button:disabled {
+  opacity: 0.72;
+}
+
+.auth-panel button:disabled:hover {
+  transform: none;
+  filter: none;
+}
+
+.auth-panel button {
+  width: 100%;
+}
+
+.subtitle {
+  color: var(--muted);
+  margin-top: 0.3rem;
+}
+
+.stack-form {
+  margin-top: 1rem;
+  display: grid;
+  gap: 0.62rem;
+}
+
+.secondary-button {
+  background: var(--nascar-blue);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.setup-layout {
+  max-width: 1180px;
+  min-height: 100vh;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(280px, 1fr));
+  gap: 1.05rem;
+  padding: 1.2rem;
+  align-items: start;
+  background:
+    linear-gradient(180deg, rgb(0 0 0 / 94%), rgb(0 0 0 / 88%)),
+    repeating-linear-gradient(
+      -45deg,
+      rgb(250 250 250 / 4%) 0,
+      rgb(250 250 250 / 4%) 10px,
+      transparent 10px,
+      transparent 20px
+    ),
+    var(--nascar-black);
+}
+
+.full-row {
+  grid-column: 1 / -1;
+}
+
+.app-shell {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1rem 1.8rem;
+}
+
+/* Header + tabs: one strip (matches iOS HeaderView + tab bar) */
+.app-header-strip {
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  margin: 0 -1rem 0;
+  background: transparent !important;
+  border: none !important;
+  border-bottom: none !important;
+  box-shadow: none !important;
+}
+
+/* Header: NASCAR icon + page title + league menu (matches iOS HeaderView) */
+.app-header {
+  padding: 0.5rem 1rem 0.375rem;
+  margin: 0;
+  background: transparent;
+  border-bottom: none;
+}
+
+.app-header-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 48px;
+  overflow: visible;
+}
+
+.app-header-brand {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  min-width: 0;
+  margin-right: -0.5rem; /* overlap title slightly like iOS stripeOverlap */
+  overflow: visible;
+}
+
+.app-header-logo-img {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  object-fit: contain;
+  vertical-align: middle;
+}
+
+.app-header-title {
+  width: 160px;
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  line-height: 1.5;
+  margin: 0;
+  margin-top: 6px;
+  padding: 0.25em 0 0.2em;
+  padding-left: 0px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-height: 1.5em;
+}
+
+.app-header-trailing {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.app-header-menu-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.app-header-menu-btn:hover {
+  background: color-mix(in srgb, var(--nascar-blue) 12%, transparent);
+}
+
+.header-stripes-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+}
+
+.header-stripes-icon > i {
+  display: block;
+  min-height: 100%;
+}
+
+.header-stripes-icon--rotated {
+  transform: rotate(15.5deg);
+  transition: transform 0.25s ease-in-out;
+}
+
+.app-header-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 0.5rem;
+  min-width: 160px;
+  background: var(--panel-alt);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  padding: 0.25rem 0;
+  z-index: 20;
+}
+
+.app-header-dropdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.5rem 0.875rem;
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  border-radius: 0;
+}
+
+.app-header-dropdown-item:hover {
+  background: color-mix(in srgb, var(--nascar-blue) 10%, transparent);
+}
+
+.app-header-check {
+  color: var(--nascar-red);
+  font-weight: 700;
+}
+
+.app-header-divider {
+  border: none;
+  border-top: 1px solid var(--line);
+  margin: 0.25rem 0;
+}
+
+.app-header-signout {
+  color: var(--nascar-red);
+}
+
+.app-header-dropdown-notes {
+  padding: 0.5rem 0.875rem 0.625rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  text-align: left;
+}
+
+.app-header-dropdown-notes-title {
+  font-family: var(--font-display);
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.app-header-dropdown-notes-text,
+.app-header-dropdown-notes-code {
+  font-size: 0.8125rem;
+  color: var(--muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+#invite-code,
+#new-invite-code {
+  font-family: var(--font-body);
+  letter-spacing: 0.04em;
+}
+
+.topbar {
+  position: relative;
+  padding: 1rem 1.05rem;
+  border-radius: 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  overflow: hidden;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.league-switcher {
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+
+.tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0 1rem 0.625rem;
+  margin: 0;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.tabs button {
+  flex-shrink: 0;
+  background: transparent;
+  color: var(--text);
+  border: none;
+  border-radius: 999px;
+  box-shadow: none !important;
+  min-height: 36px;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+
+.tabs button:hover {
+  background: color-mix(in srgb, var(--nascar-blue) 10%, transparent);
+}
+
+.tabs button.active {
+  color: var(--nascar-white);
+  background: var(--nascar-red);
+  box-shadow: none !important;
+}
+
+/* Ensure header + tabs stay readable in dark mode (fixes mobile Safari etc.) */
+@media (prefers-color-scheme: dark) {
+  .app-header-strip .app-header-title,
+  .app-header-strip .app-header-menu-btn,
+  .app-header-strip .tabs button:not(.active) {
+    color: #f5f7fa;
+  }
+}
+
+.content-grid {
+  margin-top: 0.95rem;
+  display: grid;
+  gap: 1rem;
+}
+
+/* App card: matches iOS .appCard (rounded, border, neutral shadow) */
+.app-card {
+  background: var(--panel);
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  padding: 1rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  .app-card {
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  }
+}
+
+.panel {
+  background: var(--panel);
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  padding: 1rem;
+  display: grid;
+  gap: 0.9rem;
+}
+
+.panel.wide {
+  gap: 1rem;
+}
+
+.panel.home-panel {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  gap: 0.875rem;
+}
+
+.section-title {
+  font-family: var(--font-display);
+  font-size: 1.375rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  margin: 0;
+  color: var(--text);
+}
+
+.section-title-small {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.race-name {
+  font-family: var(--font-display-barlow);
+  font-size: 1.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  margin: 0 0 0.1rem;
+  color: var(--text);
+}
+
+.race-meta {
+  font-size: 0.94rem;
+  color: var(--muted);
+  margin: 0;
+}
+
+.countdown-wrap {
+  margin-top: 0.5rem;
+}
+
+.your-picks-card {
+  text-align: left;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.2s ease;
+  border: none;
+  width: 100%;
+  color: var(--text);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.your-picks-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+}
+
+.your-picks-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.your-picks-head .chevron {
+  font-size: 1rem;
+  color: var(--muted);
+  margin-left: 0.5rem;
+}
+
+.your-picks-tiers {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.your-picks-loading {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.94rem;
+  color: var(--muted);
+  margin: 0;
+}
+
+.your-picks-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgb(255 255 255 / 0.2);
+  border-top-color: var(--nascar-red);
+  border-radius: 50%;
+  animation: your-picks-spin 0.7s linear infinite;
+}
+
+@keyframes your-picks-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.your-picks-empty {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.94rem;
+  color: var(--muted);
+  margin: 0;
+}
+
+.your-picks-empty .icon {
+  font-size: 1.1rem;
+  opacity: 0.8;
+}
+
+.picks-tier-summary {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.picks-tier-summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.picks-tier-summary-head .section-title-small {
+  margin: 0;
+}
+
+.picks-tier-count {
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.picks-tier-summary-rows {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.picks-tier-summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 10px;
+  min-height: 32px;
+}
+
+.picks-tier-summary--yellow .picks-tier-summary-row {
+  background: rgb(243 208 62 / 12%);
+}
+
+.picks-tier-summary--red .picks-tier-summary-row {
+  background: rgb(228 0 43 / 12%);
+}
+
+.picks-tier-summary--blue .picks-tier-summary-row {
+  background: rgb(0 94 184 / 12%);
+}
+
+@media (prefers-color-scheme: dark) {
+  .picks-tier-summary--yellow .picks-tier-summary-row {
+    background: rgb(243 208 62 / 20%);
+  }
+  .picks-tier-summary--red .picks-tier-summary-row {
+    background: rgb(228 0 43 / 20%);
+  }
+  .picks-tier-summary--blue .picks-tier-summary-row {
+    background: rgb(0 94 184 / 22%);
+  }
+}
+
+.picks-tier-summary-row .driver-line {
+  font-size: 0.94rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 85%;
+}
+
+.picks-tier-summary-row .driver-team {
+  font-weight: 400;
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-left: 0.25rem;
+}
+
+.picks-tier-summary-row .check-icon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border-radius: 50%;
+}
+
+.picks-tier-summary--yellow .check-icon {
+  color: var(--nascar-yellow);
+}
+
+.picks-tier-summary--red .check-icon {
+  color: var(--nascar-red);
+}
+
+.picks-tier-summary--blue .check-icon {
+  color: var(--nascar-blue);
+}
+
+.picks-tier-summary-row .picks-tier-position {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  min-width: 1.5rem;
+  text-align: center;
+}
+
+.picks-tier-summary-row .picks-tier-points {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  font-weight: 800;
+  min-width: 1.75rem;
+  text-align: right;
+}
+
+.picks-tier-summary--yellow .picks-tier-position {
+  color: var(--nascar-yellow);
+}
+
+.picks-tier-summary--red .picks-tier-position {
+  color: var(--nascar-red);
+}
+
+.picks-tier-summary--blue .picks-tier-position {
+  color: var(--nascar-blue);
+}
+
+.picks-tier-summary--yellow .picks-tier-points {
+  color: var(--nascar-yellow);
+}
+
+.picks-tier-summary--red .picks-tier-points {
+  color: var(--nascar-red);
+}
+
+.picks-tier-summary--blue .picks-tier-points {
+  color: var(--nascar-blue);
+}
+
+.picks-save-wrap {
+  padding: 0.5rem 0;
+}
+
+.picks-save-button {
+  width: 100%;
+  min-height: 48px;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.payout-text,
+.invite-code {
+  margin: 0;
+  font-size: 0.94rem;
+}
+
+.invite-code {
+  font-family: var(--font-body);
+  font-size: 1.5rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.race-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.9rem;
+  background: var(--panel);
+  display: grid;
+  gap: 0.2rem;
+}
+
+.race-card.compact {
+  max-width: 560px;
+}
+
+/* Live race (home during race) */
+.race-card--live {
+  position: relative;
+  padding-top: 2rem;
+}
+.live-badge {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.75rem;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--nascar-white);
+  background: var(--nascar-red);
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+}
+.live-leaderboard-link {
+  display: inline-block;
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--nascar-blue);
+  text-decoration: none;
+}
+.live-leaderboard-link:hover {
+  text-decoration: underline;
+}
+.live-driver-points-card .section-title,
+.live-standings-card .section-title {
+  margin-bottom: 0.5rem;
+}
+.live-driver-points-list,
+.live-standings-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.live-driver-points-row,
+.live-standings-row-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--line);
+}
+.live-driver-points-row:last-child,
+.live-standings-row:last-child .live-standings-row-header {
+  border-bottom: none;
+}
+.live-driver-points-name,
+.live-standings-name {
+  font-weight: 600;
+}
+.live-driver-points-pts,
+.live-standings-total {
+  font-weight: 700;
+  color: var(--nascar-blue);
+}
+.live-standings-row {
+  border-bottom: 1px solid var(--line);
+  padding: 0.5rem 0;
+}
+.live-standings-row:last-child {
+  border-bottom: none;
+}
+.live-standings-row-header {
+  border-bottom: none;
+  padding-bottom: 0.25rem;
+}
+.live-standings-rank {
+  font-weight: 700;
+  color: var(--muted);
+  min-width: 2rem;
+}
+.live-standings-breakdown {
+  display: grid;
+  gap: 0.2rem;
+  padding-left: 2rem;
+  padding-top: 0.25rem;
+}
+.live-standings-breakdown-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+.live-standings-driver-pts {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.countdown-chip {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 0.28rem 0.72rem;
+}
+
+.countdown-chip.open {
+  background: rgb(228 0 43 / 16%);
+  color: color-mix(in srgb, var(--nascar-red) 74%, var(--text));
+}
+
+.countdown-chip.locked {
+  background: rgb(228 0 43 / 15%);
+  color: color-mix(in srgb, var(--nascar-red) 76%, var(--text));
+}
+
+.status-pill {
+  width: fit-content;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.84rem;
+  border: 1px solid var(--line);
+  background: var(--panel-alt);
+}
+
+.callout {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.8rem;
+  background: var(--panel-alt);
+  display: grid;
+  gap: 0.55rem;
+}
+
+.admin-heading-meta {
+  font-family: var(--font-body);
+}
+
+.callout pre {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: var(--font-body);
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* Data Operations forms */
+.form-hint {
+  font-size: 0.875rem;
+  color: var(--muted);
+  margin: 0 0 0.5rem;
+  line-height: 1.35;
+}
+
+.stack-form .label-text {
+  display: block;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 0.25rem;
+}
+
+.stack-form label + label,
+.stack-form fieldset + label,
+.stack-form label + fieldset,
+.stack-form fieldset + button {
+  margin-top: 0.5rem;
+}
+
+.manual-results-rows {
+  border: none;
+  padding: 0;
+  margin: 0 0 0.5rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.manual-results-rows .label-text {
+  margin-bottom: 0.25rem;
+}
+
+.manual-result-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.manual-result-row select {
+  min-width: 180px;
+}
+
+.manual-result-row input[type="number"] {
+  width: 5rem;
+}
+
+.button-ghost {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  padding: 0.35rem 0.6rem;
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.button-ghost:hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+
+.input-hint {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-top: 0.2rem;
+}
+
+.panel.picks-panel {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  gap: 0.875rem;
+}
+
+.status-card {
+  padding: 0.875rem 1rem;
+}
+
+.status-card--error p {
+  color: var(--nascar-red);
+  font-size: 0.8125rem;
+  margin: 0;
+}
+
+.status-card--success p {
+  color: var(--success);
+  font-size: 0.8125rem;
+  margin: 0;
+}
+
+.status-card--locked {
+  background: var(--surface-elevated);
+}
+.status-card--locked p {
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  margin: 0;
+}
+
+.tier-layout {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.tier-card {
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  padding: 1rem;
+  display: grid;
+  gap: 0.6rem;
+  background: var(--panel);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.tier-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.tier-card-header .section-title-small {
+  margin: 0;
+}
+
+.tier-card-count {
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.tier-driver-rows {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.tier-driver-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 10px;
+  border: none;
+  background: var(--panel-alt);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  min-height: 36px;
+}
+
+.tier-driver-row:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--nascar-blue) 8%, var(--panel-alt));
+}
+
+.tier-card--yellow .tier-driver-row--selected {
+  background: rgb(243 208 62 / 12%);
+}
+
+.tier-card--red .tier-driver-row--selected {
+  background: rgb(228 0 43 / 12%);
+}
+
+.tier-card--blue .tier-driver-row--selected {
+  background: rgb(0 94 184 / 12%);
+}
+
+@media (prefers-color-scheme: dark) {
+  .tier-card--yellow .tier-driver-row--selected {
+    background: rgb(243 208 62 / 20%);
+  }
+  .tier-card--red .tier-driver-row--selected {
+    background: rgb(228 0 43 / 20%);
+  }
+  .tier-card--blue .tier-driver-row--selected {
+    background: rgb(0 94 184 / 22%);
+  }
+}
+
+.tier-driver-line {
+  font-size: 0.94rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 85%;
+}
+
+.tier-driver-team {
+  font-weight: 400;
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-left: 0.25rem;
+}
+
+.tier-driver-check {
+  flex-shrink: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tier-card--yellow .tier-driver-check {
+  color: var(--nascar-yellow);
+}
+
+.tier-card--red .tier-driver-check {
+  color: var(--nascar-red);
+}
+
+.tier-card--blue .tier-driver-check {
+  color: var(--nascar-blue);
+}
+
+.tier-driver-position {
+  flex-shrink: 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  min-width: 1.5rem;
+  text-align: center;
+}
+
+.tier-driver-points {
+  flex-shrink: 0;
+  font-size: 0.9rem;
+  font-weight: 800;
+  min-width: 1.75rem;
+  text-align: right;
+}
+
+.tier-card--yellow .tier-driver-position {
+  color: var(--nascar-yellow);
+}
+
+.tier-card--red .tier-driver-position {
+  color: var(--nascar-red);
+}
+
+.tier-card--blue .tier-driver-position {
+  color: var(--nascar-blue);
+}
+
+.tier-card--yellow .tier-driver-points {
+  color: var(--nascar-yellow);
+}
+
+.tier-card--red .tier-driver-points {
+  color: var(--nascar-red);
+}
+
+.tier-card--blue .tier-driver-points {
+  color: var(--nascar-blue);
+}
+
+.tier-card .tier-driver-points--muted {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.tier-card .section-title-small {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.driver-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.45rem;
+}
+
+.driver-chip {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  padding: 0.54rem;
+  display: grid;
+  gap: 0.1rem;
+  text-align: left;
+  box-shadow: none;
+}
+
+.driver-chip.active {
+  border-color: color-mix(in srgb, var(--nascar-blue) 24%, var(--line));
+  color: var(--text);
+  background: color-mix(in srgb, var(--nascar-yellow) 38%, var(--panel));
+}
+
+.driver-number {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.driver-name {
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.driver-team {
+  font-size: 0.76rem;
+  opacity: 0.86;
+}
+
+/* Standings: matches iOS Weekly + Sprint + Season Leaderboards + Weekly Breakdown */
+.standings-panel {
+  display: grid;
+  gap: 0.875rem;
+}
+
+.standings-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.standings-section-header .section-title {
+  margin: 0 0 0.15rem;
+}
+
+.standings-section-subtitle {
+  font-size: 0.8125rem;
+  color: var(--muted);
+  margin: 0;
+}
+
+.standings-expand-wrap {
+  flex-shrink: 0;
+}
+
+.standings-expand-chevron {
+  display: block;
+  width: 100%;
+  margin-top: 0.35rem;
+  padding: 0.35rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.standings-expand-chevron:hover {
+  color: var(--text);
+  background: var(--panel-alt);
+}
+
+.standings-picker-wrap {
+  margin-bottom: 0.5rem;
+}
+
+.standings-picker-wrap.standings-picker-chevron {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.standings-picker-wrap.standings-picker-chevron .standings-picker-select {
+  flex: 1;
+  min-width: 0;
+}
+
+.standings-chevron {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.standings-expand-select,
+.standings-picker-select {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 0.35rem 0.5rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel-alt);
+  cursor: pointer;
+  min-height: auto;
+}
+
+.standings-picker-select {
+  padding: 0.4rem 0.6rem;
+}
+
+.standings-rows {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.standings-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background: var(--panel-alt);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+  min-height: 36px;
+}
+
+.standings-row:hover {
+  background: color-mix(in srgb, var(--nascar-blue) 8%, var(--panel-alt));
+}
+
+.standings-row--selected {
+  background: rgb(0 94 184 / 12%);
+}
+
+@media (prefers-color-scheme: dark) {
+  .standings-row--selected {
+    background: rgb(0 94 184 / 22%);
+  }
+}
+
+.standings-row--you {
+  border-color: var(--nascar-blue);
+}
+
+.standings-row--rank-1 {
+  background: rgb(212 175 55 / 18%);
+}
+
+.standings-row--rank-2 {
+  background: rgb(200 200 188 / 16%);
+}
+
+.standings-row--rank-3 {
+  background: rgb(205 127 50 / 16%);
+}
+
+.standings-row--rank-1.standings-row--selected {
+  background: rgb(0 94 184 / 12%);
+}
+
+.standings-row--rank-2.standings-row--selected,
+.standings-row--rank-3.standings-row--selected {
+  background: rgb(0 94 184 / 12%);
+}
+
+@media (prefers-color-scheme: dark) {
+  .standings-row--rank-1 {
+    background: rgb(212 175 55 / 22%);
+  }
+  .standings-row--rank-2 {
+    background: rgb(200 200 188 / 20%);
+  }
+  .standings-row--rank-3 {
+    background: rgb(205 127 50 / 20%);
+  }
+}
+
+.standings-rank {
+  font-size: 0.94rem;
+  font-weight: 700;
+  min-width: 32px;
+}
+
+.standings-name {
+  flex: 1;
+  font-size: 0.94rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.standings-total {
+  font-size: 0.94rem;
+  font-weight: 700;
+}
+
+.breakdown-list--standings {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.breakdown-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.breakdown-race {
+  font-size: 0.94rem;
+  font-weight: 700;
+}
+
+.breakdown-pts {
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 420px;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.55rem 0.45rem;
+  border-bottom: 1px solid var(--line);
+}
+
+th {
+  color: var(--muted);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  font-size: 0.82rem;
+}
+
+tbody tr {
+  transition: background-color 0.2s ease;
+}
+
+tbody tr:hover {
+  background: color-mix(in srgb, var(--nascar-blue) 7%, transparent);
+}
+
+.table-scroll tbody tr[tabindex] {
+  cursor: pointer;
+}
+
+.table-scroll tbody tr:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+
+.selected-row {
+  background: color-mix(in srgb, var(--nascar-blue) 12%, transparent);
+}
+
+.pick-monitoring-groups {
+  display: grid;
+  gap: 1rem;
+}
+
+.pick-monitoring-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.pick-monitoring-label {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.pick-monitoring-label.submitted {
+  color: var(--nascar-green, #00843d);
+}
+
+.pick-monitoring-label.missing {
+  color: color-mix(in srgb, var(--nascar-red) 85%, var(--text));
+}
+
+.pick-monitoring-names {
+  align-items: stretch;
+}
+
+.pick-monitoring-name-item {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 0.5rem;
+}
+
+.pick-monitoring-name-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.35rem 0.5rem;
+  font: inherit;
+  font-weight: 600;
+  color: var(--text);
+  background: color-mix(in srgb, var(--nascar-green) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--nascar-green) 35%, transparent);
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.pick-monitoring-name-trigger:hover {
+  background: color-mix(in srgb, var(--nascar-green) 20%, transparent);
+  border-color: color-mix(in srgb, var(--nascar-green) 50%, transparent);
+}
+
+.pick-monitoring-chevron {
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.pick-monitoring-picks-dropdown {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-left: 0.25rem;
+}
+
+.breakdown-list,
+.results-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.breakdown-list li,
+.results-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.adjusted-tag {
+  font-size: 0.74rem;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--nascar-red) 85%, var(--text));
+  background: rgb(228 0 43 / 14%);
+  border-radius: 999px;
+  padding: 0.15rem 0.48rem;
+}
+
+.inline-label {
+  display: grid;
+  gap: 0.32rem;
+  max-width: 320px;
+}
+
+/* Race tab: matches iOS Your Picks + Results */
+.race-panel {
+  display: grid;
+  gap: 0.875rem;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+}
+
+.race-selector-card {
+  position: relative;
+  cursor: pointer;
+}
+
+.race-selector-inner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.race-selector-inner .chevron {
+  font-size: 1rem;
+  color: var(--muted);
+  margin-top: 0.25rem;
+}
+
+.race-select-native {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.race-your-picks-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.race-total {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.race-total-label {
+  font-size: 0.94rem;
+  color: var(--muted);
+}
+
+.race-total-value {
+  font-size: 0.94rem;
+  font-weight: 700;
+}
+
+.race-breakdown-rows {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.race-breakdown-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 10px;
+  min-height: 36px;
+}
+
+.race-breakdown-row--yellow {
+  background: rgb(243 208 62 / 12%);
+}
+
+.race-breakdown-row--red {
+  background: rgb(228 0 43 / 12%);
+}
+
+.race-breakdown-row--blue {
+  background: rgb(0 94 184 / 12%);
+}
+
+@media (prefers-color-scheme: dark) {
+  .race-breakdown-row--yellow {
+    background: rgb(243 208 62 / 20%);
+  }
+  .race-breakdown-row--red {
+    background: rgb(228 0 43 / 20%);
+  }
+  .race-breakdown-row--blue {
+    background: rgb(0 94 184 / 22%);
+  }
+}
+
+.race-breakdown-left {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.race-breakdown-row .driver-line {
+  font-size: 0.94rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.race-breakdown-meta {
+  font-size: 0.75rem;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.race-breakdown-right {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.race-breakdown-pts {
+  font-size: 0.94rem;
+  font-weight: 700;
+}
+
+.race-results-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.race-results-headings {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0 0.18rem;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 0.2rem;
+}
+
+.race-leaderboard-rows {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.race-leaderboard-row {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.race-leaderboard-trigger {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.45rem 0.55rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel-alt);
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.race-leaderboard-trigger:hover {
+  background: color-mix(in srgb, var(--nascar-blue) 10%, var(--panel-alt));
+  border-color: color-mix(in srgb, var(--nascar-blue) 30%, var(--line));
+}
+
+.race-leaderboard-rank {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.race-leaderboard-name {
+  font-size: 0.95rem;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.race-leaderboard-total {
+  font-size: 0.92rem;
+  font-weight: 800;
+  color: var(--nascar-blue);
+}
+
+.race-leaderboard-chevron {
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.race-leaderboard-dropdown {
+  padding: 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.race-leaderboard-dropdown--empty {
+  padding: 0.55rem 0.75rem;
+}
+
+.race-result-item {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.15rem 0;
+}
+
+.race-result-name {
+  font-size: 0.94rem;
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.race-result-finish {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.race-result-team {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.race-result-pts {
+  font-size: 0.94rem;
+  font-weight: 700;
+}
+
+.race-results-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(240px, 1fr));
+  gap: 0.8rem;
+}
+
+.big-number {
+  font-family: var(--font-display);
+  font-size: 2rem;
+  color: var(--nascar-blue);
+  text-transform: uppercase;
+}
+
+.small-button {
+  min-height: 34px;
+  padding: 0.32rem 0.64rem;
+  font-size: 0.8rem;
+}
+
+.error-text,
+.success-text {
+  margin-top: 0.4rem;
+  font-size: 0.9rem;
+}
+
+.error-text {
+  color: var(--error);
+}
+
+.success-text {
+  color: var(--success);
+}
+
+.centered {
+  text-align: center;
+}
+
+.error-footer {
+  margin-top: 0.7rem;
+  color: var(--error);
+  font-size: 0.85rem;
+}
+
+.error-footer-list {
+  margin: 0;
+  padding-left: 1.25rem;
+  list-style: disc;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
+}
+
+@media (max-width: 980px) {
+  .setup-layout {
+    grid-template-columns: 1fr;
+    padding-top: 1rem;
+  }
+
+  .race-results-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .topbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .topbar-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .driver-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .breakdown-list li,
+  .results-list li {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

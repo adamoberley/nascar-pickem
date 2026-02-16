@@ -133,9 +133,25 @@ final class PlayerViewModel: ObservableObject {
     /// Selected race results with adjustments applied (driverId -> final points).
     var selectedRacePointsWithAdjustments: [(String, Int)] {
         let adjByDriver = Dictionary(selectedRaceAdjustments.map { ($0.driverId, $0.deltaPoints) }, uniquingKeysWith: +)
-        return selectedRacePoints.map { driverId, base in
-            (driverId, base + (adjByDriver[driverId] ?? 0))
-        }.sorted { $0.1 > $1.1 }
+        var pointsByDriver: [String: Int] = [:]
+
+        for (driverId, basePoints) in selectedRacePoints {
+            pointsByDriver[driverId] = basePoints + (adjByDriver[driverId] ?? 0)
+        }
+
+        if let raceId = selectedRaceId {
+            for score in allWeeklyScores where score.raceId == raceId {
+                for item in score.breakdown where pointsByDriver[item.driverId] == nil {
+                    pointsByDriver[item.driverId] = item.finalPointsApplied
+                }
+            }
+        }
+
+        for item in selectedRaceScore?.breakdown ?? [] where pointsByDriver[item.driverId] == nil {
+            pointsByDriver[item.driverId] = item.finalPointsApplied
+        }
+
+        return pointsByDriver.sorted { $0.value > $1.value }.map { ($0.key, $0.value) }
     }
 
     var selectedRace: RaceItem? {

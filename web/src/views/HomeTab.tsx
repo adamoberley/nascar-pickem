@@ -1,5 +1,11 @@
-import type { PickDoc, RaceDoc, RacePointsDoc, WeeklyScoreDoc } from "../lib/types";
-import type { DriverDoc, MemberDoc } from "../lib/types";
+import type {
+  DriverDoc,
+  MemberDoc,
+  PickDoc,
+  RaceDoc,
+  RacePointsDoc,
+  WeeklyScoreDoc,
+} from "../lib/types";
 import { PicksTierSummary } from "../components/PicksTierSummary";
 import { RaceCard } from "../components/RaceCard";
 
@@ -17,6 +23,8 @@ interface Props {
   liveWeeklyScores: WeeklyScoreDoc[];
   /** When race is live, driverId -> current running position (for showing P1, P2, etc.). */
   driverPositionByDriverId: Record<string, number>;
+  /** For locked/completed race picks: driverId -> points to show instead of checkmarks. */
+  driverPointsByDriverId: Record<string, number>;
   pickState: PickState;
   driversById: Record<string, DriverDoc>;
   memberById: Record<string, MemberDoc>;
@@ -30,11 +38,29 @@ export function HomeTab({
   liveRacePoints,
   liveWeeklyScores,
   driverPositionByDriverId,
+  driverPointsByDriverId,
   pickState,
   driversById,
   memberById,
   onOpenPicks,
 }: Props) {
+  const allDriverPointRows = (
+    Object.keys(driverPointsByDriverId).length > 0
+      ? Object.entries(driverPointsByDriverId).map(([driverId, points]) => ({
+          driverId,
+          points,
+        }))
+      : (liveRacePoints?.drivers ?? []).map((entry) => ({
+          driverId: entry.driverId,
+          points: entry.basePoints,
+        }))
+  ).sort((a, b) => {
+    if (b.points !== a.points) return b.points - a.points;
+    const aName = driversById[a.driverId]?.name ?? a.driverId;
+    const bName = driversById[b.driverId]?.name ?? b.driverId;
+    return aName.localeCompare(bName);
+  });
+
   return (
     <section className="panel home-panel">
       {liveRace ? (
@@ -61,20 +87,18 @@ export function HomeTab({
             </a>
           </div>
 
-          {liveRacePoints?.drivers?.length ? (
+          {allDriverPointRows.length ? (
             <div className="app-card live-driver-points-card">
               <h2 className="section-title">Live driver points</h2>
               <ul className="live-driver-points-list">
-                {[...liveRacePoints.drivers]
-                  .sort((a, b) => b.basePoints - a.basePoints)
-                  .map((entry) => (
-                    <li key={entry.driverId} className="live-driver-points-row">
-                      <span className="live-driver-points-name">
-                        {driversById[entry.driverId]?.name ?? entry.driverId}
-                      </span>
-                      <span className="live-driver-points-pts">{entry.basePoints}</span>
-                    </li>
-                  ))}
+                {allDriverPointRows.map((entry) => (
+                  <li key={entry.driverId} className="live-driver-points-row">
+                    <span className="live-driver-points-name">
+                      {driversById[entry.driverId]?.name ?? entry.driverId}
+                    </span>
+                    <span className="live-driver-points-pts">{entry.points}</span>
+                  </li>
+                ))}
               </ul>
             </div>
           ) : null}
@@ -98,7 +122,7 @@ export function HomeTab({
                       <span className="live-standings-total">{score.weeklyTotal}</span>
                     </div>
                     <div className="live-standings-breakdown">
-                      {score.breakdown
+                      {[...score.breakdown]
                         .sort((a, b) => b.finalPointsApplied - a.finalPointsApplied)
                         .map((item) => (
                           <div key={item.driverId} className="live-standings-breakdown-item">
@@ -129,6 +153,22 @@ export function HomeTab({
             />
           ) : null}
 
+          {!liveRace && allDriverPointRows.length ? (
+            <div className="app-card live-driver-points-card">
+              <h2 className="section-title">Driver points</h2>
+              <ul className="live-driver-points-list">
+                {allDriverPointRows.map((entry) => (
+                  <li key={entry.driverId} className="live-driver-points-row">
+                    <span className="live-driver-points-name">
+                      {driversById[entry.driverId]?.name ?? entry.driverId}
+                    </span>
+                    <span className="live-driver-points-pts">{entry.points}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
           <button
             type="button"
             className="app-card your-picks-card"
@@ -153,6 +193,7 @@ export function HomeTab({
                     driversById={driversById}
                     tierColor="yellow"
                     driverPositionByDriverId={driverPositionByDriverId}
+                    driverPointsByDriverId={driverPointsByDriverId}
                   />
                 ) : null}
                 {pickState.data.tierB?.length ? (
@@ -163,6 +204,7 @@ export function HomeTab({
                     driversById={driversById}
                     tierColor="red"
                     driverPositionByDriverId={driverPositionByDriverId}
+                    driverPointsByDriverId={driverPointsByDriverId}
                   />
                 ) : null}
                 {pickState.data.tierC?.length ? (
@@ -173,6 +215,7 @@ export function HomeTab({
                     driversById={driversById}
                     tierColor="blue"
                     driverPositionByDriverId={driverPositionByDriverId}
+                    driverPointsByDriverId={driverPointsByDriverId}
                   />
                 ) : null}
               </div>

@@ -22,6 +22,45 @@ export function applyDriverPoints(basePoints: number, adjustmentDelta: number): 
   return Math.max(0, basePoints + adjustmentDelta);
 }
 
+export function buildPickScoreBreakdown(
+  pick: PickDoc,
+  basePointsByDriver: Map<string, number>,
+  adjustmentsByDriver: Map<string, number>,
+): {
+  breakdown: WeeklyScoreDoc["breakdown"];
+  weeklyTotal: number;
+  hasAdjustments: boolean;
+} {
+  const selectedDrivers = Array.from(
+    new Set([...pick.tierA, ...pick.tierB, ...pick.tierC]),
+  );
+
+  const breakdown = selectedDrivers.map((driverId) => {
+    const basePoints = basePointsByDriver.get(driverId) ?? 0;
+    const totalAdjustments = adjustmentsByDriver.get(driverId) ?? 0;
+    const finalPointsApplied = applyDriverPoints(basePoints, totalAdjustments);
+
+    return {
+      driverId,
+      basePoints,
+      totalAdjustments,
+      finalPointsApplied,
+      adjusted: totalAdjustments !== 0,
+    };
+  });
+
+  const weeklyTotal = breakdown.reduce(
+    (total, item) => total + item.finalPointsApplied,
+    0,
+  );
+
+  return {
+    breakdown,
+    weeklyTotal,
+    hasAdjustments: breakdown.some((item) => item.adjusted),
+  };
+}
+
 export async function rescoreRace(leagueId: string, raceId: string): Promise<void> {
   logger.info("Rescoring race", { leagueId, raceId });
 
@@ -49,35 +88,18 @@ export async function rescoreRace(leagueId: string, raceId: string): Promise<voi
   const updateOps: Promise<FirebaseFirestore.WriteResult>[] = [];
   picksSnap.forEach((pickDocSnap) => {
     const pick = pickDocSnap.data() as PickDoc;
-    const selectedDrivers = Array.from(
-      new Set([...pick.tierA, ...pick.tierB, ...pick.tierC]),
-    );
-
-    const breakdown = selectedDrivers.map((driverId) => {
-      const basePoints = basePointsByDriver.get(driverId) ?? 0;
-      const totalAdjustments = adjustmentsByDriver.get(driverId) ?? 0;
-      const finalPointsApplied = applyDriverPoints(basePoints, totalAdjustments);
-
-      return {
-        driverId,
-        basePoints,
-        totalAdjustments,
-        finalPointsApplied,
-        adjusted: totalAdjustments !== 0,
-      };
-    });
-
-    const weeklyTotal = breakdown.reduce(
-      (total, item) => total + item.finalPointsApplied,
-      0,
+    const scored = buildPickScoreBreakdown(
+      pick,
+      basePointsByDriver,
+      adjustmentsByDriver,
     );
 
     const weeklyScore: WeeklyScoreDoc = {
       raceId,
       userId: pick.userId,
-      breakdown,
-      weeklyTotal,
-      hasAdjustments: breakdown.some((item) => item.adjusted),
+      breakdown: scored.breakdown,
+      weeklyTotal: scored.weeklyTotal,
+      hasAdjustments: scored.hasAdjustments,
       updatedAt: nowTimestamp(),
     };
 
@@ -89,6 +111,7 @@ export async function rescoreRace(leagueId: string, raceId: string): Promise<voi
   });
 
   await Promise.all(updateOps);
+  await recomputeSeasonScores(leagueId);
   logger.info("Race scoring complete", {
     leagueId,
     raceId,

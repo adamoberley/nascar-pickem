@@ -20,6 +20,8 @@ interface Props {
   driversById: Record<string, DriverDoc>;
   /** When race is live, driverId -> current running position (show P1, P2, etc. on selected picks). */
   driverPositionByDriverId: Record<string, number>;
+  /** When race is locked/completed, driverId -> points for this race (show points instead of checkmark). */
+  driverPointsByDriverId: Record<string, number>;
 }
 
 export function PicksTab({
@@ -38,6 +40,7 @@ export function PicksTab({
   savePickSubmit,
   driversById,
   driverPositionByDriverId,
+  driverPointsByDriverId,
 }: Props) {
   if (!primaryRace) {
     return (
@@ -83,6 +86,7 @@ export function PicksTab({
             onToggle={(driverId, limit) => togglePick("tierA", driverId, limit)}
             tierColor="yellow"
             driverPositionByDriverId={driverPositionByDriverId}
+            driverPointsByDriverId={driverPointsByDriverId}
           />
           <TierBucket
             title="Tier B"
@@ -97,6 +101,7 @@ export function PicksTab({
             onToggle={(driverId, limit) => togglePick("tierB", driverId, limit)}
             tierColor="red"
             driverPositionByDriverId={driverPositionByDriverId}
+            driverPointsByDriverId={driverPointsByDriverId}
           />
           <TierBucket
             title="Tier C"
@@ -111,6 +116,7 @@ export function PicksTab({
             onToggle={(driverId, limit) => togglePick("tierC", driverId, limit)}
             tierColor="blue"
             driverPositionByDriverId={driverPositionByDriverId}
+            driverPointsByDriverId={driverPointsByDriverId}
           />
         </>
       ) : (

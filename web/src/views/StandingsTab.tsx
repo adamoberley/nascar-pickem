@@ -193,7 +193,7 @@ export function StandingsTab({
           {(isSeasonExpanded ? mergedStandingsRows : mergedStandingsRows.slice(0, 3)).map((row) => (
             <div
               key={row.id}
-              className={`standings-row ${row.id === userId ? "standings-row--you" : ""} standings-row--rank-${Math.min(row.rank, 2)}`}
+              className={`standings-row ${row.id === userId ? "standings-row--you" : ""} standings-row--rank-${Math.min(row.rank, 3)}`}
             >
               <span className="standings-rank">#{row.rank}</span>
               <span className="standings-name">{row.displayName}</span>

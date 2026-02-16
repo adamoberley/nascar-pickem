@@ -8,6 +8,8 @@ interface Props {
   tierColor: "yellow" | "red" | "blue";
   /** When race is live, driverId -> current running position (show P1, P2, etc. instead of checkmark). */
   driverPositionByDriverId?: Record<string, number>;
+  /** When race is locked/completed, driverId -> points for this race (show points instead of checkmark). */
+  driverPointsByDriverId?: Record<string, number>;
 }
 
 export function PicksTierSummary({
@@ -17,6 +19,7 @@ export function PicksTierSummary({
   driversById,
   tierColor,
   driverPositionByDriverId,
+  driverPointsByDriverId,
 }: Props) {
   return (
     <div className={`picks-tier-summary picks-tier-summary--${tierColor}`}>
@@ -28,6 +31,7 @@ export function PicksTierSummary({
         {driverIds.map((driverId) => {
           const driver = driversById[driverId];
           const position = driverPositionByDriverId?.[driverId];
+          const points = driverPointsByDriverId?.[driverId];
           return (
             <div key={driverId} className="picks-tier-summary-row">
               <span className="driver-line">
@@ -36,6 +40,8 @@ export function PicksTierSummary({
               </span>
               {position != null ? (
                 <span className="picks-tier-position" aria-label={`Position ${position}`}>P{position}</span>
+              ) : points != null ? (
+                <span className="picks-tier-points" aria-label={`${points} points`}>{points}</span>
               ) : (
                 <span className="check-icon" aria-hidden>✓</span>
               )}

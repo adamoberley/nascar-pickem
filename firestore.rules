@@ -29,29 +29,6 @@ service cloud.firestore {
         request.time >= get(racePath(leagueId, raceId)).data.lockTime;
     }
 
-    // Once a race is locked or completed, any league member can read all picks for that race (for live standings).
-    function raceIsLockedOrCompleted(leagueId, raceId) {
-      return exists(racePath(leagueId, raceId)) &&
-        get(racePath(leagueId, raceId)).data.status in ["locked", "completed"];
-    }
-
-    function validPickShape(data) {
-      return data.tierA is list &&
-        data.tierB is list &&
-        data.tierC is list &&
-        data.tierA.size() == 3 &&
-        data.tierB.size() == 2 &&
-        data.tierC.size() == 1;
-    }
-
-    function pickWriteAllowed(leagueId, data) {
-      return isMember(leagueId) &&
-        data.userId == request.auth.uid &&
-        data.raceId is string &&
-        validPickShape(data) &&
-        !raceLocked(leagueId, data.raceId);
-    }
-
     match /users/{userId} {
       allow read, write: if isSignedIn() && request.auth.uid == userId;
     }
@@ -69,56 +46,50 @@ service cloud.firestore {
     match /leagues/{leagueId} {
       allow read: if isMember(leagueId);
       allow create: if false;
-      allow update, delete: if isAdmin(leagueId);
+      allow update, delete: if false;
 
       match /members/{userId} {
         allow read: if isMember(leagueId);
-        allow create, update, delete: if isAdmin(leagueId);
+        allow create, update, delete: if false;
       }
 
       match /races/{raceId} {
         allow read: if isMember(leagueId);
-        allow create, update, delete: if isAdmin(leagueId);
+        allow create, update, delete: if false;
       }
 
       match /drivers/{driverId} {
         allow read: if isMember(leagueId);
-        allow create, update, delete: if isAdmin(leagueId);
+        allow create, update, delete: if false;
       }
 
       match /standingsSnapshots/{snapshotId} {
         allow read: if isMember(leagueId);
-        allow create, update, delete: if isAdmin(leagueId);
+        allow create, update, delete: if false;
       }
 
       match /tiers/{raceId} {
         allow read: if isMember(leagueId);
-        allow create, update, delete: if isAdmin(leagueId);
+        allow create, update, delete: if false;
       }
 
       match /picks/{pickId} {
         allow read: if isMember(leagueId) &&
           (isAdmin(leagueId) ||
            resource.data.userId == request.auth.uid ||
-           (resource.data.raceId is string && raceIsLockedOrCompleted(leagueId, resource.data.raceId)));
+           (resource.data.raceId is string && raceLocked(leagueId, resource.data.raceId)));
 
-        allow create: if pickWriteAllowed(leagueId, request.resource.data);
-
-        allow update: if pickWriteAllowed(leagueId, request.resource.data) &&
-          resource.data.userId == request.auth.uid &&
-          resource.data.raceId == request.resource.data.raceId;
-
-        allow delete: if false;
+        allow create, update, delete: if false;
       }
 
       match /racePoints/{raceId} {
         allow read: if isMember(leagueId);
-        allow create, update, delete: if isAdmin(leagueId);
+        allow create, update, delete: if false;
       }
 
       match /adjustments/{adjustmentId} {
         allow read: if isMember(leagueId);
-        allow create, update, delete: if isAdmin(leagueId);
+        allow create, update, delete: if false;
       }
 
       match /weeklyScores/{scoreId} {

@@ -1,0 +1,55 @@
+@import url("https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700;800&family=Source+Sans+3:wght@400;600;700&display=swap");
+
+/* Custom Fonts – Racer Italic (display/race titles, matches iOS) */
+/* Import via relative path so Vite bundles fonts – avoids Safari/iOS cache mismatch with preload */
+@font-face {
+  font-family: "Racer Italic";
+  src: url("../assets/fonts/RacerItalic.woff2") format("woff2"),
+       url("../assets/fonts/RacerItalic.otf") format("opentype");
+  font-weight: normal;
+  font-style: normal; /* Use normal so Safari matches – font glyphs are already italic */
+  font-display: swap;
+}
+
+:root {
+  color-scheme: light dark;
+
+  --font-body: "Source Sans 3", "Segoe UI", sans-serif;
+  --font-display: "Racer Italic", "Barlow Condensed", "Arial Narrow", sans-serif;
+  --font-display-barlow: "Barlow Condensed", "Arial Narrow", sans-serif;
+
+  --nascar-black: #101820;
+  --nascar-white: #fafafa;
+  --nascar-blue: #005eb8;
+  --nascar-red: #e4002b;
+  --nascar-yellow: #f3d03e;
+
+  --bg: #f4f6f8;
+  --panel: #ffffff;
+  --panel-alt: #f2f4f7;
+  --text: #101820;
+  --panel-text: #101820;
+  --muted: #4c5c6b;
+  --line: #ccd3db;
+  --input-bg: #ffffff;
+  --focus: #005eb8;
+
+  --success: #1d6c44;
+  --error: #b0002a;
+  --shadow: 0 12px 26px rgba(16, 24, 32, 0.13);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #000000;
+    --panel: #0a0a0a;
+    --panel-alt: #111111;
+    --text: #f5f7fa;
+    --panel-text: #f5f7fa;
+    --muted: #b9c4d0;
+    --line: #324253;
+    --input-bg: #0d0d0d;
+    --focus: #4f9ef0;
+    --shadow: 0 14px 30px rgba(0, 0, 0, 0.38);
+  }
+}

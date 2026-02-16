@@ -75,6 +75,8 @@ Use this typeface for headings, body text, and UI elements to ensure consistency
 - **Barlow Condensed** — Fallback for headings.
 - **Source Sans 3** — Body text.
 
+**Web styles:** `web/src/styles/app.css` imports `tokens.css` (design tokens) and `app-core.css` (component styles).
+
 Logos
 Incorporate the following logo variants based on context:
 

@@ -11,7 +11,12 @@
 
 import { logger } from "firebase-functions";
 
+const CUP_SERIES_ID = 1;
 const LIVE_FEED_URL = "https://cf.nascar.com/live/feeds/live-feed.json";
+const RACE_LIST_BASIC_URL = (seasonYear: number) =>
+  `https://cf.nascar.com/cacher/${seasonYear}/${CUP_SERIES_ID}/race_list_basic.json`;
+const WEEKEND_FEED_URL = (seasonYear: number, raceId: number) =>
+  `https://cf.nascar.com/cacher/${seasonYear}/${CUP_SERIES_ID}/${raceId}/weekend-feed.json`;
 
 /** Request like a browser so the feed isn’t blocked for server-side requests. */
 const LIVE_FEED_HEADERS: RequestInit["headers"] = {
@@ -90,6 +95,58 @@ export interface StageResultEntry {
   stagePoints?: number;
 }
 
+/** Official completed-race row from weekend-feed (matches live-results table). */
+export interface NascarOfficialRaceResult {
+  finishPosition: number;
+  driverName: string;
+  points: number;
+  vehicleNumber: string;
+}
+
+/** Basic race metadata from cf.nascar.com race_list_basic.json. */
+export interface NascarRaceListBasicEntry {
+  race_id?: number;
+  race_name?: string;
+  race_date?: string;
+  race_type_id?: number;
+  series_id?: number;
+  track_name?: string;
+}
+
+interface ResolveNascarRaceIdInput {
+  leagueRaceId: string;
+  leagueRaceName: string;
+  leagueRaceStartTimeMs: number;
+  raceList: NascarRaceListBasicEntry[];
+}
+
+interface NascarWeekendFeed {
+  weekend_race?: NascarWeekendRace[];
+}
+
+interface NascarWeekendRace {
+  race_id?: number;
+  race_name?: string;
+  results?: NascarWeekendRaceResult[];
+  stage_results?: NascarWeekendRaceStageResult[];
+}
+
+interface NascarWeekendRaceResult {
+  finishing_position?: number;
+  official_car_number?: string;
+  car_number?: string;
+  driver_fullname?: string;
+  points_earned?: number;
+}
+
+interface NascarWeekendRaceStageResult {
+  stage_number?: number;
+  results?: Array<{
+    car_number?: string;
+    stage_points?: number;
+  }>;
+}
+
 /**
  * Fetch the public NASCAR live feed JSON.
  * Returns null if the feed is unavailable or not for an active race.
@@ -113,16 +170,28 @@ export async function fetchNascarLiveFeed(): Promise<FetchLiveFeedResult | null>
 }
 
 /**
+ * NASCAR finish-position points for this app's rules:
+ * 1st=40, 2nd=35, 3rd=34, 4th=33 ... 36th+=1.
+ */
+export function computeNascarPositionPoints(position: number): number {
+  if (!Number.isFinite(position) || position <= 0) return 0;
+  if (position === 1) return 40;
+  if (position === 2) return 35;
+  return Math.max(1, 37 - position);
+}
+
+/**
  * Compute live points from feed: position only (40, 35, 34, ... 1).
  * No laps-led or stage points; league uses position + stage top-10 (stage data not in this feed).
  */
 function computeLivePoints(feed: NascarLiveFeed): FetchLiveFeedResult {
   const vehicles = (feed.vehicles ?? [])
-    .filter((v) => v.running_position >= 1 && v.status === 1)
+    // Include all classified cars so picks don't drop to 0 when a driver is off pace or out.
+    .filter((v) => Number.isFinite(v.running_position) && v.running_position >= 1)
     .sort((a, b) => a.running_position - b.running_position);
 
   const drivers: LiveFeedDriverPoints[] = vehicles.map((v) => {
-    const basePoints = Math.max(1, Math.min(40, 41 - v.running_position));
+    const basePoints = computeNascarPositionPoints(v.running_position);
     const lapsLed = (v.laps_led ?? []).reduce(
       (sum, seg) => sum + (seg.end_lap - seg.start_lap + 1),
       0,
@@ -166,9 +235,148 @@ export function getNascarRaceIdForLeagueRace(leagueRaceId: string): number | nul
   return NASCAR_RACE_ID_BY_LEAGUE_RACE[leagueRaceId] ?? null;
 }
 
+/**
+ * Fetch Cup race list for a season from cf.nascar.com.
+ * Used to resolve league race docs to NASCAR numeric race_id dynamically.
+ */
+export async function fetchNascarRaceListBasic(
+  seasonYear: number,
+): Promise<NascarRaceListBasicEntry[]> {
+  const url = RACE_LIST_BASIC_URL(seasonYear);
+  try {
+    const res = await fetch(url, { headers: LIVE_FEED_HEADERS });
+    if (!res.ok) {
+      logger.warn("NASCAR race_list_basic request failed", { url, status: res.status });
+      return [];
+    }
+    const data = (await res.json()) as unknown;
+    if (!Array.isArray(data)) return [];
+    return data as NascarRaceListBasicEntry[];
+  } catch (err) {
+    logger.warn("NASCAR race_list_basic fetch error", { url, error: String(err) });
+    return [];
+  }
+}
+
+function toDateOnly(value: string | undefined | null): string | null {
+  if (!value) return null;
+  const match = value.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (match) return match[1];
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString().slice(0, 10);
+}
+
+function dateDiffInDays(leftDateOnly: string, rightDateOnly: string): number {
+  const [ly, lm, ld] = leftDateOnly.split("-").map((x) => Number(x));
+  const [ry, rm, rd] = rightDateOnly.split("-").map((x) => Number(x));
+  if (![ly, lm, ld, ry, rm, rd].every((n) => Number.isFinite(n))) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+  const leftMs = Date.UTC(ly, lm - 1, ld);
+  const rightMs = Date.UTC(ry, rm - 1, rd);
+  return Math.floor(Math.abs(leftMs - rightMs) / (24 * 60 * 60 * 1000));
+}
+
+const RACE_NAME_STOP_WORDS = new Set([
+  "at",
+  "presented",
+  "by",
+  "powered",
+  "the",
+  "race",
+  "series",
+  "cup",
+  "nascar",
+]);
+
+function tokenizeRaceName(name: string): string[] {
+  const normalized = normalizeRaceName(name)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+  if (!normalized) return [];
+  return normalized
+    .split(/\s+/)
+    .filter((token) => token.length > 0 && !RACE_NAME_STOP_WORDS.has(token));
+}
+
+function raceNameOverlapScore(left: string, right: string): number {
+  const leftTokens = new Set(tokenizeRaceName(left));
+  const rightTokens = new Set(tokenizeRaceName(right));
+  if (leftTokens.size === 0 || rightTokens.size === 0) return 0;
+
+  let intersection = 0;
+  leftTokens.forEach((token) => {
+    if (rightTokens.has(token)) intersection += 1;
+  });
+
+  return intersection / Math.min(leftTokens.size, rightTokens.size);
+}
+
+/**
+ * Resolve NASCAR numeric race_id for a league race doc.
+ * Uses hardcoded overrides first, then same-date matching from race_list_basic.json.
+ */
+export function resolveNascarRaceIdForLeagueRace(input: ResolveNascarRaceIdInput): number | null {
+  const overrideRaceId = getNascarRaceIdForLeagueRace(input.leagueRaceId);
+  if (overrideRaceId != null) return overrideRaceId;
+
+  const pointsRaces = input.raceList
+    .filter((race): race is NascarRaceListBasicEntry & { race_id: number } => typeof race.race_id === "number")
+    .filter((race) => (race.series_id ?? CUP_SERIES_ID) === CUP_SERIES_ID)
+    .filter((race) => (race.race_type_id ?? 1) === 1);
+
+  if (pointsRaces.length === 0) return null;
+
+  const leagueRaceDate = new Date(input.leagueRaceStartTimeMs).toISOString().slice(0, 10);
+
+  type Candidate = {
+    raceId: number;
+    nameScore: number;
+    sameDate: boolean;
+    dayDiff: number;
+  };
+
+  const candidates: Candidate[] = pointsRaces.map((race) => {
+    const raceDate = toDateOnly(race.race_date);
+    const sameDate = raceDate === leagueRaceDate;
+    const dayDiff =
+      raceDate != null ? dateDiffInDays(leagueRaceDate, raceDate) : Number.MAX_SAFE_INTEGER;
+
+    return {
+      raceId: race.race_id,
+      nameScore: raceNameOverlapScore(input.leagueRaceName, race.race_name ?? ""),
+      sameDate,
+      dayDiff,
+    };
+  });
+
+  const sortBest = (left: Candidate, right: Candidate): number =>
+    right.nameScore - left.nameScore ||
+    left.dayDiff - right.dayDiff ||
+    left.raceId - right.raceId;
+
+  const sameDate = candidates.filter((candidate) => candidate.sameDate).sort(sortBest);
+  if (sameDate.length > 0) return sameDate[0].raceId;
+
+  const strongByName = candidates
+    .filter((candidate) => candidate.nameScore >= 0.75)
+    .sort(sortBest);
+  if (strongByName.length > 0) return strongByName[0].raceId;
+
+  const weakByNameAndDate = candidates
+    .filter((candidate) => candidate.nameScore >= 0.5 && candidate.dayDiff <= 2)
+    .sort(sortBest);
+  if (weakByNameAndDate.length > 0) return weakByNameAndDate[0].raceId;
+
+  return null;
+}
+
 /** Live stage points URL. race_id is per-race from the live feed (e.g. 5596 = Daytona 500, different for each race). */
 const LIVE_STAGE_POINTS_URL = (seasonYear: number, raceId: number) =>
-  `https://cf.nascar.com/cacher/${seasonYear}/1/${raceId}/live-stage-points.json`;
+  `https://cf.nascar.com/cacher/${seasonYear}/${CUP_SERIES_ID}/${raceId}/live-stage-points.json`;
 
 /** One stage in the live-stage-points.json response. */
 interface LiveStagePointsItem {
@@ -185,6 +393,173 @@ interface LiveStagePointsItem {
 }
 
 /**
+ * Fetch weekend-feed for one race_id.
+ * Returns null when unavailable.
+ */
+async function fetchNascarWeekendRace(
+  seasonYear: number,
+  raceId: number,
+): Promise<NascarWeekendRace | null> {
+  const url = WEEKEND_FEED_URL(seasonYear, raceId);
+  try {
+    const res = await fetch(url, { headers: LIVE_FEED_HEADERS });
+    if (!res.ok) {
+      logger.warn("NASCAR weekend-feed request failed", { url, status: res.status });
+      return null;
+    }
+    const data = (await res.json()) as NascarWeekendFeed;
+    if (!Array.isArray(data?.weekend_race) || data.weekend_race.length === 0) {
+      return null;
+    }
+    const weekendRace = data.weekend_race[0];
+    if (!weekendRace || typeof weekendRace !== "object") return null;
+    return weekendRace;
+  } catch (err) {
+    logger.warn("NASCAR weekend-feed fetch error", { url, error: String(err) });
+    return null;
+  }
+}
+
+function normalizeVehicleNumber(value: unknown): string {
+  if (value == null) return "";
+  return String(value).trim();
+}
+
+function extractOfficialResultsFromWeekendRace(
+  weekendRace: NascarWeekendRace,
+): NascarOfficialRaceResult[] {
+  const rows: NascarOfficialRaceResult[] = [];
+  for (const result of weekendRace.results ?? []) {
+    const finishPosition =
+      typeof result.finishing_position === "number" ? result.finishing_position : 0;
+    if (finishPosition <= 0) continue;
+    const vehicleNumber = normalizeVehicleNumber(
+      result.official_car_number ?? result.car_number,
+    );
+    if (!vehicleNumber) continue;
+    const points =
+      typeof result.points_earned === "number"
+        ? result.points_earned
+        : computeNascarPositionPoints(finishPosition);
+    rows.push({
+      finishPosition,
+      driverName: String(result.driver_fullname ?? "").trim(),
+      points,
+      vehicleNumber,
+    });
+  }
+  return rows.sort((a, b) => a.finishPosition - b.finishPosition);
+}
+
+function extractFinishPointsByVehicleFromWeekendRace(
+  weekendRace: NascarWeekendRace,
+): Map<string, number> {
+  const byVehicle = new Map<string, number>();
+  const results = weekendRace.results ?? [];
+  for (const result of results) {
+    const finishingPosition =
+      typeof result.finishing_position === "number" ? result.finishing_position : 0;
+    if (finishingPosition <= 0) continue;
+    const vehicleNumber = normalizeVehicleNumber(
+      result.official_car_number ?? result.car_number,
+    );
+    if (!vehicleNumber) continue;
+    byVehicle.set(vehicleNumber, computeNascarPositionPoints(finishingPosition));
+  }
+  return byVehicle;
+}
+
+function extractStagePointsByVehicleFromWeekendRace(
+  weekendRace: NascarWeekendRace,
+): Map<string, number> {
+  const byVehicle = new Map<string, number>();
+  for (const stage of weekendRace.stage_results ?? []) {
+    const results = stage.results ?? [];
+    for (const result of results) {
+      const vehicleNumber = normalizeVehicleNumber(result.car_number);
+      const stagePoints =
+        typeof result.stage_points === "number" ? result.stage_points : 0;
+      if (!vehicleNumber || stagePoints === 0) continue;
+      byVehicle.set(vehicleNumber, (byVehicle.get(vehicleNumber) ?? 0) + stagePoints);
+    }
+  }
+  return byVehicle;
+}
+
+/**
+ * Fetch official completed-race rows from NASCAR weekend-feed.
+ * Returns rows shaped like the live-results table (Finish / Name / Points).
+ */
+export async function fetchNascarCompletedRaceOfficialResults(
+  seasonYear: number,
+  raceId: number,
+): Promise<NascarOfficialRaceResult[]> {
+  const weekendRace = await fetchNascarWeekendRace(seasonYear, raceId);
+  if (!weekendRace) return [];
+  return extractOfficialResultsFromWeekendRace(weekendRace);
+}
+
+/**
+ * Fetch final race points from NASCAR weekend-feed.
+ * Prefers official points_earned values when available; otherwise falls back to
+ * finish-position points + stage points.
+ * Returns empty map when official finishing positions are not posted yet.
+ */
+export async function fetchNascarCompletedRacePoints(
+  seasonYear: number,
+  raceId: number,
+): Promise<Map<string, number>> {
+  const weekendRace = await fetchNascarWeekendRace(seasonYear, raceId);
+  if (!weekendRace) return new Map();
+
+  const officialResults = extractOfficialResultsFromWeekendRace(weekendRace);
+  if (officialResults.length > 0) {
+    const officialPointsByVehicle = new Map<string, number>();
+    for (const row of officialResults) {
+      officialPointsByVehicle.set(row.vehicleNumber, row.points);
+    }
+
+    logger.info("NASCAR weekend-feed official points loaded", {
+      seasonYear,
+      raceId,
+      raceName: weekendRace.race_name ?? "",
+      officialDrivers: officialResults.length,
+    });
+    return officialPointsByVehicle;
+  }
+
+  const finishPointsByVehicle = extractFinishPointsByVehicleFromWeekendRace(weekendRace);
+  if (finishPointsByVehicle.size === 0) {
+    // Results are not posted yet.
+    return new Map();
+  }
+
+  let stagePointsByVehicle = extractStagePointsByVehicleFromWeekendRace(weekendRace);
+  if (stagePointsByVehicle.size === 0) {
+    // Fallback to the stage endpoint if weekend-feed stage block is missing.
+    stagePointsByVehicle = await fetchNascarLiveStagePoints(seasonYear, raceId);
+  }
+
+  const totalPointsByVehicle = new Map<string, number>(finishPointsByVehicle);
+  for (const [vehicleNumber, stagePoints] of stagePointsByVehicle) {
+    totalPointsByVehicle.set(
+      vehicleNumber,
+      (totalPointsByVehicle.get(vehicleNumber) ?? 0) + stagePoints,
+    );
+  }
+
+  logger.info("NASCAR weekend-feed points loaded", {
+    seasonYear,
+    raceId,
+    raceName: weekendRace.race_name ?? "",
+    finishDrivers: finishPointsByVehicle.size,
+    stageDrivers: stagePointsByVehicle.size,
+  });
+
+  return totalPointsByVehicle;
+}
+
+/**
  * Fetch live stage points from cf.nascar.com/cacher/.../live-stage-points.json.
  * Returns a map of vehicle_number (string) -> total stage points across all stages.
  * Cup series = 1. Returns empty map if fetch fails or response is invalid.
@@ -195,7 +570,7 @@ export async function fetchNascarLiveStagePoints(
 ): Promise<Map<string, number>> {
   const url = LIVE_STAGE_POINTS_URL(seasonYear, raceId);
   try {
-    const res = await fetch(url, { headers: { Accept: "application/json" } });
+    const res = await fetch(url, { headers: LIVE_FEED_HEADERS });
     if (!res.ok) {
       logger.warn("NASCAR live-stage-points request failed", { url, status: res.status });
       return new Map();
@@ -206,7 +581,7 @@ export async function fetchNascarLiveStagePoints(
     for (const stage of stages as LiveStagePointsItem[]) {
       const results = stage?.results ?? [];
       for (const r of results) {
-        const num = r?.vehicle_number != null ? String(r.vehicle_number).trim() : "";
+        const num = normalizeVehicleNumber(r?.vehicle_number);
         const pts = typeof r?.stage_points === "number" ? r.stage_points : 0;
         if (num) byVehicle.set(num, (byVehicle.get(num) ?? 0) + pts);
       }
@@ -245,10 +620,9 @@ export function normalizeRaceName(name: string): string {
 export function runNameMatchesRace(runName: string, ourRaceName: string): boolean {
   const a = normalizeRaceName(runName);
   const b = normalizeRaceName(ourRaceName);
+  if (!a || !b) return false;
   if (a === b) return true;
   if (a.includes(b) || b.includes(a)) return true;
-  // Token match: feed "daytona 500" vs our "2026 daytona 500 at daytona" - require feed tokens to appear in ours.
-  const feedTokens = a.split(/\s+/).filter((t) => t.length > 1);
-  if (feedTokens.length > 0 && feedTokens.every((t) => b.includes(t))) return true;
-  return false;
+  // Token overlap threshold handles sponsor/tagline differences.
+  return raceNameOverlapScore(a, b) >= 0.6;
 }

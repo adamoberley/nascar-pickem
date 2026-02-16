@@ -12,7 +12,9 @@
     "test": "npm run test --workspaces",
     "deploy": "firebase deploy",
     "setup:env": "node scripts/setup-env.js",
-    "predeploy": "npm run build"
+    "predeploy": "npm run build",
+    "test:e2e": "npm --prefix web run test:e2e",
+    "test:unit": "npm run test --workspaces"
   },
   "engines": {
     "node": ">=20"

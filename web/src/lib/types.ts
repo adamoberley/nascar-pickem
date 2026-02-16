@@ -72,6 +72,15 @@ export interface RacePointsDoc {
     basePoints: number;
     /** Current running position (1-based) when from live feed. */
     runningPosition?: number;
+    /** Official finish position (1-based) when available from completed race results. */
+    finishPosition?: number;
+  }>;
+  /** Unmapped official results rows from NASCAR (for Race tab results table). */
+  officialResults?: Array<{
+    finishPosition: number;
+    driverName: string;
+    points: number;
+    vehicleNumber?: string;
   }>;
   /** Source of the points data, e.g. "nascar-live" when from live feed. */
   source?: string;

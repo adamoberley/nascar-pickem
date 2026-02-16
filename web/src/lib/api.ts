@@ -8,11 +8,19 @@ import {
   where,
   type DocumentData,
   type QueryDocumentSnapshot,
-  updateDoc,
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import { db, functions } from "./firebase";
 import type { LeagueDoc, MemberDoc, PickDoc } from "./types";
+import type {
+  CreateLeagueRequest,
+  CreateLeagueResponse,
+  JoinLeagueByInviteRequest,
+  JoinLeagueByInviteResponse,
+  SavePickRequest,
+  UpdateLeagueSettingsRequest,
+  UpdateMemberPaidStatusRequest,
+} from "../../../shared/callables";
 
 interface Membership {
   leagueId: string;
@@ -62,34 +70,28 @@ export async function loadMemberships(userId: string): Promise<Membership[]> {
   }
 }
 
-export async function createLeague(input: {
-  name: string;
-  seasonYear: number;
-  inviteCode: string;
-  payoutConfigText?: string;
-}): Promise<{ leagueId: string; inviteCode: string }> {
-  const fn = httpsCallable(functions, "createLeague");
+export async function createLeague(input: CreateLeagueRequest): Promise<CreateLeagueResponse> {
+  const fn = httpsCallable<CreateLeagueRequest, CreateLeagueResponse>(
+    functions,
+    "createLeague",
+  );
   const result = await fn(input);
-  return result.data as { leagueId: string; inviteCode: string };
+  return result.data;
 }
 
-export async function joinLeagueByInvite(input: {
-  inviteCode: string;
-  displayName: string;
-}): Promise<{ leagueId: string; displayName: string }> {
-  const fn = httpsCallable(functions, "joinLeagueByInvite");
+export async function joinLeagueByInvite(
+  input: JoinLeagueByInviteRequest,
+): Promise<JoinLeagueByInviteResponse> {
+  const fn = httpsCallable<JoinLeagueByInviteRequest, JoinLeagueByInviteResponse>(
+    functions,
+    "joinLeagueByInvite",
+  );
   const result = await fn(input);
-  return result.data as { leagueId: string; displayName: string };
+  return result.data;
 }
 
-export async function savePick(input: {
-  leagueId: string;
-  raceId: string;
-  tierA: string[];
-  tierB: string[];
-  tierC: string[];
-}): Promise<void> {
-  const fn = httpsCallable(functions, "savePick");
+export async function savePick(input: SavePickRequest): Promise<void> {
+  const fn = httpsCallable<SavePickRequest, { ok: true }>(functions, "savePick");
   await fn(input);
 }
 
@@ -134,24 +136,27 @@ export async function addAdjustment(input: {
 }
 
 export async function setMemberPaidStatus(
-  leagueId: string,
-  userId: string,
-  paidStatus: "paid" | "unpaid",
+  leagueId: UpdateMemberPaidStatusRequest["leagueId"],
+  userId: UpdateMemberPaidStatusRequest["userId"],
+  paidStatus: UpdateMemberPaidStatusRequest["paidStatus"],
 ): Promise<void> {
-  await updateDoc(doc(db, "leagues", leagueId, "members", userId), {
-    paidStatus,
-  });
+  const fn = httpsCallable<UpdateMemberPaidStatusRequest, { ok: true }>(
+    functions,
+    "updateMemberPaidStatus",
+  );
+  await fn({ leagueId, userId, paidStatus });
 }
 
 export async function setLeagueSettings(
-  leagueId: string,
-  values: {
-    name: string;
-    seasonYear: number;
-    payoutConfigText: string;
-  },
+  leagueId: UpdateLeagueSettingsRequest["leagueId"],
+  values: Omit<UpdateLeagueSettingsRequest, "leagueId">,
 ): Promise<void> {
-  await updateDoc(doc(db, "leagues", leagueId), {
+  const fn = httpsCallable<UpdateLeagueSettingsRequest, { ok: true }>(
+    functions,
+    "updateLeagueSettings",
+  );
+  await fn({
+    leagueId,
     name: values.name,
     seasonYear: values.seasonYear,
     payoutConfigText: values.payoutConfigText,

@@ -237,34 +237,30 @@ struct PicksView: View {
         tierC = viewModel.currentPick?.tierC ?? []
     }
 
+    @ViewBuilder
     private func lockCountdown(lockDate: Date) -> some View {
         TimelineView(.periodic(from: .now, by: 1)) { _ in
             let remaining = max(0, Int(lockDate.timeIntervalSinceNow))
-            let hours = remaining / 3600
-            let minutes = (remaining % 3600) / 60
-            let seconds = remaining % 60
-            let days = hours / 24
-            let displayHours = hours % 24
+            if remaining > 0 {
+                let hours = remaining / 3600
+                let minutes = (remaining % 3600) / 60
+                let seconds = remaining % 60
+                let days = hours / 24
+                let displayHours = hours % 24
+                let countdownText = hours >= 1
+                    ? String(format: "Locks in %dd %dh %02dm", days, displayHours, minutes)
+                    : String(format: "Locks in %02dm %02ds", minutes, seconds)
 
-            let countdownText: String = {
-                if remaining == 0 {
-                    return "Locked"
-                } else if hours >= 1 {
-                    return String(format: "Locks in %dd %dh %02dm", days, displayHours, minutes)
-                } else {
-                    return String(format: "Locks in %02dm %02ds", minutes, seconds)
-                }
-            }()
-
-            return Text(countdownText)
-                .font(NASCARTheme.textFont(size: 14, weight: .bold))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .foregroundStyle(NASCARTheme.red)
-                .background(
-                    Capsule()
-                        .fill(NASCARTheme.red.opacity(colorScheme == .dark ? 0.2 : 0.13))
-                )
+                Text(countdownText)
+                    .font(NASCARTheme.textFont(size: 14, weight: .bold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .foregroundStyle(NASCARTheme.red)
+                    .background(
+                        Capsule()
+                            .fill(NASCARTheme.red.opacity(colorScheme == .dark ? 0.2 : 0.13))
+                    )
+            }
         }
     }
 }

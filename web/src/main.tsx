@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom/client";
 import "./styles/app.css";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 
 function Bootstrap() {
   const [App, setApp] = useState<React.ComponentType | null>(null);
@@ -74,7 +75,9 @@ function showError(el: HTMLElement, msg: string, detail?: string) {
 try {
   ReactDOM.createRoot(rootEl).render(
     <React.StrictMode>
-      <Bootstrap />
+      <ErrorBoundary>
+        <Bootstrap />
+      </ErrorBoundary>
     </React.StrictMode>,
   );
 } catch (err) {

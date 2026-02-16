@@ -12,7 +12,7 @@ Private season-long NASCAR Pick'Em platform for ~20–21 users with:
 ## What This Project Includes
 
 - Firestore schema aligned with your weekly game rules (3A / 2B / 1C)
-- Callable + trigger + scheduled Cloud Functions for:
+- Callable + scheduled Cloud Functions for:
   - league join/create
   - pick save validation + lock behavior
   - scoring + season ranks
@@ -26,8 +26,9 @@ Private season-long NASCAR Pick'Em platform for ~20–21 users with:
 
 | Path | Description |
 |------|-------------|
-| `functions/` | Firebase Cloud Functions (TypeScript) |
-| `web/` | React + Vite web app (mobile responsive). Views in `web/src/views/`; admin role included. |
+| `functions/` | Firebase Cloud Functions (TypeScript). Vitest for unit tests. |
+| `web/` | React + Vite web app (mobile responsive). Views in `web/src/views/`; Playwright E2E in `web/tests/`. |
+| `shared/` | Shared TypeScript (callables, types) used by functions and web |
 | `ios/Nascar Pick'Em/` | SwiftUI iOS app (Xcode project and source) |
 | `docs/` | Project documentation (see [docs/README.md](docs/README.md)) |
 | `scripts/` | `setup-env.js`, `init-db.js` |
@@ -57,15 +58,17 @@ Penalty rule implemented in scoring:
 
 Core behavior:
 1. Compute tiers from latest standings snapshot (`computeRaceTiers`, plus snapshot trigger).
-2. Auto-lock picks at race lock time (`lockPicksAtRaceStart`, scheduled every minute).
+2. Auto-lock picks at race lock time (`lockPicksAtRaceStart` every 15 minutes + `lockPicksAtRaceStartRaceHour` every minute near race lock windows, with NASCAR live-feed early-lock fallback).
 3. Scheduled ingestion (`ingestLeagueDataDaily`, `refreshRaceResults`) with swappable provider.
 4. Live race sync from NASCAR.com (`syncLiveRaceFromNascar`, scheduled; `syncLiveRaceNow` callable for admins).
-5. Re-score races on picks / race points / adjustments changes.
-6. Recompute season totals and rank on weekly score updates.
+5. Re-score races when lock cycles, live sync, provider refresh, or admin updates change race data.
+6. Recompute season totals/rank as part of each race re-score.
 7. Admin callables:
    - `manualUpsertRacePoints`
    - `addAdjustment`
    - `manualRefreshData`
+   - `updateLeagueSettings`
+   - `updateMemberPaidStatus`
    - `syncLiveRaceNow` (trigger live NASCAR feed sync during a race)
 
 Player/admin callables:
@@ -83,7 +86,7 @@ Provider interface: `functions/src/provider.ts`. See [docs/provider-adapter.md](
 
 ## Web App
 
-**Typography:** Racer Italic (display/race titles), Barlow Condensed, Source Sans 3. Font assets in `web/src/assets/fonts/`.
+**Typography:** Racer Italic (display/race titles), Barlow Condensed, Source Sans 3. Font assets in `web/src/assets/fonts/`. Styles: `app.css` → `tokens.css`, `app-core.css`.
 
 ### Features
 
@@ -92,11 +95,11 @@ Player features:
 - Join private league with invite code
 - Home: next race, lock countdown, pick status
 - Picks: tiered selection with validation and save
-- Standings: season leaderboard + player weekly breakdown
-- Race: race results + your scored picks with adjusted tags
+- Standings: season leaderboard, sprint (monthly segment) leaderboard, player weekly breakdown
+- Race: select any race to view results, your scored picks with adjusted tags, and live leaderboard during races
 
 Admin features:
-- League settings (season year, payout notes)
+- League settings (name, season year, payout notes)
 - Member paid/unpaid toggles
 - Submission monitor (who has/hasn't picked)
 - Manual data refresh
@@ -121,6 +124,24 @@ To run on iOS:
    - `FirebaseCore`
 3. Add your `GoogleService-Info.plist` from Firebase Console (Project settings → Your apps → iOS) to the app target.
 4. Build and run on a simulator or device.
+
+## Testing
+
+```bash
+# Unit tests (functions + web, Vitest)
+npm run test
+
+# Typecheck only
+npm run lint
+
+# End-to-end flow (web, Playwright)
+E2E_EMAIL=you@example.com \
+E2E_PASSWORD=secret \
+E2E_INVITE_CODE=RACER-2026 \
+npm run test:e2e
+```
+
+E2E tests require a deployed app or local dev server. See `web/tests/` and `web/playwright.config.ts`.
 
 ## Setup and Deploy
 
