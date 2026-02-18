@@ -4,6 +4,7 @@ import type {
   PickDoc,
   RaceDoc,
   RacePointsDoc,
+  UserNotificationDoc,
   WeeklyScoreDoc,
 } from "../lib/types";
 import { PicksTierSummary } from "../components/PicksTierSummary";
@@ -29,6 +30,8 @@ interface Props {
   driversById: Record<string, DriverDoc>;
   memberById: Record<string, MemberDoc>;
   onOpenPicks: () => void;
+  notifications: Array<UserNotificationDoc & { id: string }>;
+  onMarkNotificationRead: (notificationId: string) => void;
 }
 
 export function HomeTab({
@@ -43,6 +46,8 @@ export function HomeTab({
   driversById,
   memberById,
   onOpenPicks,
+  notifications,
+  onMarkNotificationRead,
 }: Props) {
   const allDriverPointRows = (
     Object.keys(driverPointsByDriverId).length > 0
@@ -63,6 +68,44 @@ export function HomeTab({
 
   return (
     <section className="panel home-panel">
+      {notifications.length > 0 ? (
+        <div className="app-card">
+          <h2 className="section-title">Reminders</h2>
+          <div className="live-standings-rows">
+            {notifications.slice(0, 3).map((notification) => (
+              <div key={notification.id} className="live-standings-row">
+                <div className="live-standings-row-header">
+                  <span className="live-standings-name">
+                    {notification.title || "Pick reminder"}
+                  </span>
+                </div>
+                <div className="live-standings-breakdown">
+                  <p className="race-meta">{notification.message}</p>
+                  {notification.lockTime ? (
+                    <p className="race-meta">
+                      Locks{" "}
+                      {new Intl.DateTimeFormat("en-US", {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      }).format(new Date(notification.lockTime.toMillis()))}
+                    </p>
+                  ) : null}
+                  {!notification.readAt ? (
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      onClick={() => onMarkNotificationRead(notification.id)}
+                    >
+                      Mark read
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       {liveRace ? (
         <>
           <div className="app-card race-card race-card--live">

@@ -11,6 +11,7 @@
 		E61ACAAB2F3D846300678D4C /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = E61ACAAA2F3D846300678D4C /* FirebaseCore */; };
 		E61ACAAD2F3D846300678D4C /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = E61ACAAC2F3D846300678D4C /* FirebaseFirestore */; };
 		E61ACAAF2F3D846300678D4C /* FirebaseFunctions in Frameworks */ = {isa = PBXBuildFile; productRef = E61ACAAE2F3D846300678D4C /* FirebaseFunctions */; };
+		E65A0FFD2F465C7C0038EB03 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = E65A0FFC2F465C7C0038EB03 /* FirebaseMessaging */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -32,6 +33,7 @@
 			files = (
 				E61ACAAB2F3D846300678D4C /* FirebaseCore in Frameworks */,
 				E61ACAA92F3D846300678D4C /* FirebaseAuth in Frameworks */,
+				E65A0FFD2F465C7C0038EB03 /* FirebaseMessaging in Frameworks */,
 				E61ACAAD2F3D846300678D4C /* FirebaseFirestore in Frameworks */,
 				E61ACAAF2F3D846300678D4C /* FirebaseFunctions in Frameworks */,
 			);
@@ -44,6 +46,7 @@
 			isa = PBXGroup;
 			children = (
 				E61ACA742F3D260C00678D4C /* Nascar Pick'Em */,
+				E65A0FFB2F465C7C0038EB03 /* Frameworks */,
 				E61ACA732F3D260C00678D4C /* Products */,
 			);
 			sourceTree = "<group>";
@@ -54,6 +57,13 @@
 				E61ACA722F3D260C00678D4C /* Nascar Pick'Em.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		E65A0FFB2F465C7C0038EB03 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -80,6 +90,7 @@
 				E61ACAAA2F3D846300678D4C /* FirebaseCore */,
 				E61ACAAC2F3D846300678D4C /* FirebaseFirestore */,
 				E61ACAAE2F3D846300678D4C /* FirebaseFunctions */,
+				E65A0FFC2F465C7C0038EB03 /* FirebaseMessaging */,
 			);
 			productName = "Nascar Pick'Em";
 			productReference = E61ACA722F3D260C00678D4C /* Nascar Pick'Em.app */;
@@ -272,7 +283,7 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 7WQ8ZHZL33;
+				DEVELOPMENT_TEAM = T8M3KAKCVW;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Nascar-Pick-Em-Info.plist";
@@ -282,6 +293,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -307,7 +319,7 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 7WQ8ZHZL33;
+				DEVELOPMENT_TEAM = T8M3KAKCVW;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Nascar-Pick-Em-Info.plist";
@@ -317,6 +329,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.6;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -388,6 +401,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = E61ACAA72F3D846300678D4C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseFunctions;
+		};
+		E65A0FFC2F465C7C0038EB03 /* FirebaseMessaging */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E61ACAA72F3D846300678D4C /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseMessaging;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

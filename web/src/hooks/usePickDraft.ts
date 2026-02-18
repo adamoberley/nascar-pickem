@@ -57,6 +57,10 @@ export function usePickDraft(input: {
     driverId: string,
     limit: number,
   ) => {
+    if (isPickLocked) {
+      setPickError("Picks are locked for this race.");
+      return;
+    }
     setPickError(null);
     setPickStatus("");
     pickDirtyRef.current = true;
@@ -75,45 +79,14 @@ export function usePickDraft(input: {
     });
   };
 
-  useEffect(() => {
-    if (
-      !pickDirtyRef.current ||
-      !isPickComplete ||
-      !selectedLeagueId ||
-      !primaryRace ||
-      isPickLocked ||
-      pickSaving
-    ) {
-      return;
-    }
-    const allDrivers = [...draftPick.tierA, ...draftPick.tierB, ...draftPick.tierC];
-    if (new Set(allDrivers).size !== allDrivers.length) return;
-
-    pickDirtyRef.current = false;
-    setPickError(null);
-    setPickStatus("");
-    setPickSaving(true);
-    savePick({
-      leagueId: selectedLeagueId,
-      raceId: primaryRace.id,
-      tierA: draftPick.tierA,
-      tierB: draftPick.tierB,
-      tierC: draftPick.tierC,
-    })
-      .then(() => {
-        setPickStatus("Picks saved.");
-      })
-      .catch((err) => {
-        setPickError((err as Error).message);
-        pickDirtyRef.current = true;
-      })
-      .finally(() => {
-        setPickSaving(false);
-      });
-  }, [isPickComplete, selectedLeagueId, primaryRace?.id, isPickLocked, pickSaving, draftPick.tierA, draftPick.tierB, draftPick.tierC]);
-
   const savePickSubmit = async () => {
     if (!selectedLeagueId || !primaryRace) {
+      return;
+    }
+
+    if (isPickLocked) {
+      setPickError("Picks are locked for this race.");
+      setPickStatus("");
       return;
     }
 

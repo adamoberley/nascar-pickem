@@ -2,6 +2,7 @@ export type MemberRole = "admin" | "player";
 export type PaidStatus = "paid" | "unpaid";
 export type RaceStatus = "scheduled" | "locked" | "completed";
 export type AdjustmentType = "penalty" | "correction";
+export type UserNotificationType = "pick_reminder";
 
 export interface LeagueDoc {
   name: string;
@@ -29,6 +30,7 @@ export interface RaceDoc {
   startTime: FirebaseFirestore.Timestamp;
   lockTime: FirebaseFirestore.Timestamp;
   status: RaceStatus;
+  nascarRaceId?: number;
   providerRaceKey?: string;
   lastSyncedAt?: FirebaseFirestore.Timestamp;
   tvChannel?: string;
@@ -38,6 +40,7 @@ export interface DriverDoc {
   name: string;
   number: string;
   team: string;
+  nascarDriverId?: number;
   providerDriverKey?: string;
 }
 
@@ -133,28 +136,22 @@ export interface SeasonScoreDoc {
   updatedAt: FirebaseFirestore.Timestamp;
 }
 
-export interface ProviderRace {
-  id: string;
-  name: string;
-  track: string;
-  weekIndex: number;
-  startTimeIso: string;
-  status: RaceStatus;
+export interface UserNotificationDoc {
+  type: UserNotificationType;
+  leagueId: string;
+  raceId: string;
+  title: string;
+  message: string;
+  lockTime: FirebaseFirestore.Timestamp;
+  createdAt: FirebaseFirestore.Timestamp;
+  readAt?: FirebaseFirestore.Timestamp;
 }
 
-export interface ProviderDriverStanding {
-  providerDriverKey: string;
-  name: string;
-  number: string;
-  team: string;
-  position: number;
-}
-
-export interface ProviderRaceResult {
-  raceKey: string;
-  status: RaceStatus;
-  points: Array<{
-    providerDriverKey: string;
-    points: number;
-  }>;
+export interface UserDeviceDoc {
+  token: string;
+  platform: "ios" | "web";
+  createdAt: FirebaseFirestore.Timestamp;
+  updatedAt: FirebaseFirestore.Timestamp;
+  lastSeenAt?: FirebaseFirestore.Timestamp;
+  disabledAt?: FirebaseFirestore.Timestamp;
 }

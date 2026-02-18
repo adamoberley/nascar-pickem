@@ -8,6 +8,9 @@
 const FUNCTION_NAMES = [
   "createLeague",
   "joinLeagueByInvite",
+  "getLeaguePreviewByInviteCode",
+  "upsertPushToken",
+  "removePushToken",
   "savePick",
   "computeRaceTiers",
   "manualRefreshData",
@@ -17,11 +20,9 @@ const FUNCTION_NAMES = [
   "syncLiveRaceNow",
   "addAdjustment",
   "lockPicksAtRaceStart",
-  "lockPicksAtRaceStartRaceHour",
   "ingestLeagueDataDaily",
   "refreshRaceResults",
-  "syncLiveRaceFromNascar",
-  "onStandingsSnapshotWrite",
+  "sendPickReminders",
 ];
 
 let bundle;

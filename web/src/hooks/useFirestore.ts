@@ -21,9 +21,10 @@ interface CollectionState<T> {
 export function useFirestoreDocument<T = DocumentData>(
   reference: DocumentReference<DocumentData> | null,
 ): DocState<T> {
+  const referencePath = reference?.path ?? null;
   const [state, setState] = useState<DocState<T>>({
     data: null,
-    loading: Boolean(reference),
+    loading: Boolean(referencePath),
     error: null,
   });
 
@@ -32,6 +33,7 @@ export function useFirestoreDocument<T = DocumentData>(
       setState({ data: null, loading: false, error: null });
       return;
     }
+    setState({ data: null, loading: true, error: null });
 
     const unsubscribe = onSnapshot(
       reference,
@@ -48,7 +50,7 @@ export function useFirestoreDocument<T = DocumentData>(
     );
 
     return unsubscribe;
-  }, [reference]);
+  }, [referencePath]);
 
   return state;
 }
@@ -67,6 +69,7 @@ export function useFirestoreCollection<T = DocumentData>(
       setState({ data: [], loading: false, error: null });
       return;
     }
+    setState({ data: [], loading: true, error: null });
 
     const unsubscribe = onSnapshot(
       queryRef,

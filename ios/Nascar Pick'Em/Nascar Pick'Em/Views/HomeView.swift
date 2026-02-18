@@ -9,6 +9,10 @@ struct HomeView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 14) {
+                    if !viewModel.notifications.filter({ !$0.isRead }).isEmpty {
+                        remindersCard
+                    }
+
                     // Live race section (when race is in progress)
                     if let liveRace = viewModel.effectiveLiveRace {
                         liveRaceCard(liveRace: liveRace)
@@ -39,6 +43,44 @@ struct HomeView: View {
             .appScreenBackground()
             .toolbar(.hidden, for: .navigationBar)
         }
+    }
+
+    private var remindersCard: some View {
+        let unread = viewModel.notifications.filter { !$0.isRead }
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("Reminders")
+                .font(NASCARTheme.displayFont(size: 20, weight: .bold))
+                .textCase(.uppercase)
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(Array(unread.prefix(3))) { item in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(item.title.isEmpty ? "Pick reminder" : item.title)
+                            .font(NASCARTheme.textFont(size: 14, weight: .semibold))
+                        Text(item.message)
+                            .font(NASCARTheme.textFont(size: 13))
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if let lock = item.lockTime {
+                            Text("Locks: \(lock.formatted(date: .abbreviated, time: .shortened))")
+                                .font(NASCARTheme.textFont(size: 12))
+                                .foregroundStyle(.secondary)
+                        }
+                        Button("Mark read") {
+                            viewModel.markNotificationRead(item.id)
+                        }
+                        .font(NASCARTheme.textFont(size: 12, weight: .semibold))
+                        .buttonStyle(.plain)
+                        .foregroundStyle(NASCARTheme.blue)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(NASCARTheme.secondarySurface(for: colorScheme)))
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .appCard()
     }
 
     // MARK: - Live section

@@ -2,7 +2,6 @@ import type { DriverDoc, MemberDoc, PickDoc, RaceDoc } from "../lib/types";
 import {
   addAdjustment,
   manualRefreshData,
-  manualUpsertRacePoints,
   setLeagueSettings,
   setMemberPaidStatus,
   syncLiveRaceNow,
@@ -22,19 +21,15 @@ interface Props {
   setAdminError: (v: string | null) => void;
   setAdminMessage: (v: string) => void;
   monitorRaceId: string | null;
+  setMonitorRaceId: (v: string | null) => void;
   raceMonitorPicksState: { data: PickDoc[] };
-  monitorRaceDriverPointsByDriverId: Record<string, number>;
   membersState: { data: MemberWithId[] };
   expandedPickUserId: string | null;
   setExpandedPickUserId: (v: string | null) => void;
   driversById: Record<string, DriverDoc>;
+  driverPositionByDriverId: Record<string, number>;
+  driverPointsByDriverId: Record<string, number>;
   races: (RaceDoc & { id: string })[];
-  manualResultsRaceId: string;
-  setManualResultsRaceId: (v: string) => void;
-  manualResultsSource: string;
-  setManualResultsSource: (v: string) => void;
-  manualResultsRows: Array<{ driverId: string; basePoints: number }>;
-  setManualResultsRows: React.Dispatch<React.SetStateAction<Array<{ driverId: string; basePoints: number }>>>;
   driversState: { data: Array<DriverDoc & { id: string }> };
   adjustmentDraft: {
     raceId: string;
@@ -65,36 +60,24 @@ export function AdminTab({
   setAdminError,
   setAdminMessage,
   monitorRaceId,
+  setMonitorRaceId,
   raceMonitorPicksState,
-  monitorRaceDriverPointsByDriverId,
   membersState,
   expandedPickUserId,
   setExpandedPickUserId,
   driversById,
+  driverPositionByDriverId,
+  driverPointsByDriverId,
   races,
-  manualResultsRaceId,
-  setManualResultsRaceId,
-  manualResultsSource,
-  setManualResultsSource,
-  manualResultsRows,
-  setManualResultsRows,
   driversState,
   adjustmentDraft,
   setAdjustmentDraft,
   adminMessage,
   adminError,
 }: Props) {
-  const monitorDriverPointRows = Object.entries(monitorRaceDriverPointsByDriverId)
-    .map(([driverId, points]) => ({
-      driverId,
-      points,
-    }))
-    .sort((a, b) => {
-      if (b.points !== a.points) return b.points - a.points;
-      const aName = driversById[a.driverId]?.name ?? a.driverId;
-      const bName = driversById[b.driverId]?.name ?? b.driverId;
-      return aName.localeCompare(bName);
-    });
+  const monitorRace = monitorRaceId
+    ? (races.find((race) => race.id === monitorRaceId) ?? null)
+    : null;
 
   return (
     <section className="panel wide">
@@ -161,7 +144,29 @@ export function AdminTab({
       </article>
 
       <article className="callout">
-        <h4>Pick Monitoring <span className="admin-heading-meta">({monitorRaceId ?? "No race"})</span></h4>
+        <h4>
+          Pick Monitoring{" "}
+          <span className="admin-heading-meta">
+            ({monitorRace ? monitorRace.name : "No race"})
+          </span>
+        </h4>
+        <label>
+          <span className="label-text">Race</span>
+          <select
+            value={monitorRaceId ?? ""}
+            onChange={(event) => {
+              setExpandedPickUserId(null);
+              setMonitorRaceId(event.target.value || null);
+            }}
+          >
+            <option value="">— Select race —</option>
+            {races.map((race) => (
+              <option key={race.id} value={race.id}>
+                {race.name} · {race.track}
+              </option>
+            ))}
+          </select>
+        </label>
         <p>
           Submitted {raceMonitorPicksState.data.length}/{membersState.data.length} picks
         </p>
@@ -197,7 +202,8 @@ export function AdminTab({
                             driverIds={pick.tierA}
                             driversById={driversById}
                             tierColor="yellow"
-                            driverPointsByDriverId={monitorRaceDriverPointsByDriverId}
+                            driverPositionByDriverId={driverPositionByDriverId}
+                            driverPointsByDriverId={driverPointsByDriverId}
                           />
                           <PicksTierSummary
                             title="Tier B"
@@ -205,7 +211,8 @@ export function AdminTab({
                             driverIds={pick.tierB}
                             driversById={driversById}
                             tierColor="red"
-                            driverPointsByDriverId={monitorRaceDriverPointsByDriverId}
+                            driverPositionByDriverId={driverPositionByDriverId}
+                            driverPointsByDriverId={driverPointsByDriverId}
                           />
                           <PicksTierSummary
                             title="Tier C"
@@ -213,7 +220,8 @@ export function AdminTab({
                             driverIds={pick.tierC}
                             driversById={driversById}
                             tierColor="blue"
-                            driverPointsByDriverId={monitorRaceDriverPointsByDriverId}
+                            driverPositionByDriverId={driverPositionByDriverId}
+                            driverPointsByDriverId={driverPointsByDriverId}
                           />
                         </div>
                       ) : null}
@@ -236,24 +244,6 @@ export function AdminTab({
       </article>
 
       <article className="callout">
-        <h4>Driver Points <span className="admin-heading-meta">({monitorRaceId ?? "No race"})</span></h4>
-        {monitorDriverPointRows.length ? (
-          <ul className="live-driver-points-list">
-            {monitorDriverPointRows.map((entry) => (
-              <li key={entry.driverId} className="live-driver-points-row">
-                <span className="live-driver-points-name">
-                  {driversById[entry.driverId]?.name ?? entry.driverId}
-                </span>
-                <span className="live-driver-points-pts">{entry.points}</span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="race-meta">No race points loaded for this race yet.</p>
-        )}
-      </article>
-
-      <article className="callout">
         <h4>Data Operations</h4>
         <div className="button-row">
           <button
@@ -264,8 +254,23 @@ export function AdminTab({
               setAdminBusy(true);
               setAdminError(null);
               setAdminMessage("");
-              void manualRefreshData({ leagueId: selectedLeagueId })
-                .then(() => setAdminMessage("Data refresh requested."))
+              void (async () => {
+                await manualRefreshData({ leagueId: selectedLeagueId });
+                try {
+                  const live = await syncLiveRaceNow({ leagueId: selectedLeagueId });
+                  if (live.updated) {
+                    setAdminMessage("Data refresh complete. Live points updated from NASCAR.com.");
+                    return;
+                  }
+                  setAdminMessage(
+                    live.reason
+                      ? `Data refresh complete. ${live.reason}`
+                      : "Data refresh complete. No live race in progress or feed unavailable.",
+                  );
+                } catch {
+                  setAdminMessage("Data refresh complete. Live sync unavailable.");
+                }
+              })()
                 .catch((error) => setAdminError((error as Error).message))
                 .finally(() => setAdminBusy(false));
             }}
@@ -281,142 +286,24 @@ export function AdminTab({
               setAdminError(null);
               setAdminMessage("");
               void syncLiveRaceNow({ leagueId: selectedLeagueId })
-                .then((r) =>
+                .then((live) => {
+                  if (live.updated) {
+                    setAdminMessage("Live points updated from NASCAR.com.");
+                    return;
+                  }
                   setAdminMessage(
-                    r.updated ? "Live points updated from NASCAR.com." : r.reason ?? "No live race in progress or feed unavailable.",
-                  ),
-                )
+                    live.reason
+                      ? live.reason
+                      : "No live race in progress or feed unavailable.",
+                  );
+                })
                 .catch((error) => setAdminError((error as Error).message))
                 .finally(() => setAdminBusy(false));
             }}
           >
-            Refresh Live (NASCAR.com)
+            Sync Live Race
           </button>
         </div>
-
-        <form
-          className="stack-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!selectedLeagueId) return;
-
-            const drivers = manualResultsRows.filter(
-              (row) => row.driverId.trim() !== "" && Number.isFinite(row.basePoints),
-            );
-            if (drivers.length === 0) {
-              setAdminError("Add at least one driver with points.");
-              return;
-            }
-
-            setAdminBusy(true);
-            setAdminError(null);
-            setAdminMessage("");
-
-            void manualUpsertRacePoints({
-              leagueId: selectedLeagueId,
-              raceId: manualResultsRaceId,
-              source: manualResultsSource,
-              drivers,
-            })
-              .then(() => setAdminMessage("Manual race points saved."))
-              .catch((error) => setAdminError((error as Error).message))
-              .finally(() => setAdminBusy(false));
-          }}
-        >
-          <h5>Manual Results / Override</h5>
-          <p className="form-hint">
-            Enter or override finish-order points for a race. Pick the race, then add each
-            driver and their base points.
-          </p>
-          <label>
-            <span className="label-text">Race</span>
-            <select
-              value={manualResultsRaceId}
-              onChange={(event) => setManualResultsRaceId(event.target.value)}
-              required
-            >
-              <option value="">— Select race —</option>
-              {races.map((race) => (
-                <option key={race.id} value={race.id}>
-                  {race.name} · {race.track}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span className="label-text">Source (optional)</span>
-            <input
-              value={manualResultsSource}
-              onChange={(event) => setManualResultsSource(event.target.value)}
-              placeholder="e.g. admin-manual"
-            />
-          </label>
-          <fieldset className="manual-results-rows">
-            <span className="label-text">Driver results</span>
-            {manualResultsRows.map((row, index) => (
-              <div key={index} className="manual-result-row">
-                <select
-                  value={row.driverId}
-                  onChange={(event) => {
-                    setManualResultsRows((prev) => {
-                      const next = [...prev];
-                      next[index] = { ...next[index], driverId: event.target.value };
-                      return next;
-                    });
-                  }}
-                >
-                  <option value="">— Select driver —</option>
-                  {driversState.data.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      #{d.number} {d.name}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  type="number"
-                  min={0}
-                  value={row.basePoints}
-                  onChange={(event) => {
-                    setManualResultsRows((prev) => {
-                      const next = [...prev];
-                      next[index] = {
-                        ...next[index],
-                        basePoints: Number(event.target.value) || 0,
-                      };
-                      return next;
-                    });
-                  }}
-                  placeholder="Points"
-                  aria-label="Base points"
-                />
-                <button
-                  type="button"
-                  className="button-ghost"
-                  onClick={() => {
-                    setManualResultsRows((prev) =>
-                      prev.length > 1 ? prev.filter((_, i) => i !== index) : prev,
-                    );
-                  }}
-                  aria-label="Remove row"
-                >
-                  Remove
-                </button>
-              </div>
-            ))}
-            <button
-              type="button"
-              className="button-ghost"
-              onClick={() =>
-                setManualResultsRows((prev) => [...prev, { driverId: "", basePoints: 0 }])
-              }
-            >
-              + Add driver result
-            </button>
-          </fieldset>
-          <button type="submit" disabled={adminBusy}>
-            Save Manual Results
-          </button>
-        </form>
 
         <form
           className="stack-form"

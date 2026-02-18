@@ -85,18 +85,29 @@ If deploy times out during "Loading and analyzing source code" for functions:
 4. Use **Refresh Data Now** once to seed schedule and tiers
 5. Confirm schedule and tiers appear
 
-## 7. Optional: live NASCAR data
+## 7. NASCAR data feeds
 
-To use a real NASCAR provider instead of the static fallback:
+No provider configuration is required.
 
-- Set **Cloud Functions** config (or `.env` for emulators):
-  - `NASCAR_PROVIDER_BASE_URL` – base URL of your provider
-  - `NASCAR_PROVIDER_TOKEN` (optional)
-- Ensure the provider implements the endpoints in [provider-adapter.md](./provider-adapter.md):
-  - `GET /schedule?seasonYear=YYYY`
-  - `GET /standings?seasonYear=YYYY`
-  - `GET /results/{raceKey}?seasonYear=YYYY`
+Cloud Functions ingest directly from NASCAR CF endpoints:
+
+- Schedule/race metadata: `race_list_basic.json`
+- Standings: `racinginsights-points-feed.json`
+- Completed-race results/points: `weekend-feed.json`
+- Live race: `live-feed.json` + `live-stage-points.json`
+
+See [race-results-sources.md](./race-results-sources.md) for URL patterns.
 
 ## 8. iOS app (if using)
 
 - Add `GoogleService-Info.plist` (from Firebase Console → Project settings → Your apps → iOS) to your Xcode target
+- Add Firebase packages used by the app: `FirebaseAuth`, `FirebaseFirestore`, `FirebaseFunctions`, `FirebaseCore`, `FirebaseMessaging`
+- Enable iOS target capability: **Push Notifications**
+- Configure APNs in Firebase Console (Project settings → Cloud Messaging)
+
+## 9. Reminder channels (optional)
+
+- Push reminders are enabled by default (`ENABLE_PUSH_REMINDERS=1` unless explicitly set to `0`)
+- To enable reminder emails, set `ENABLE_EMAIL_REMINDERS=1`
+- Optional sender override: `REMINDER_EMAIL_FROM`
+- Email reminders enqueue docs into Firestore `mail` collection (compatible with Firebase **Trigger Email** extension)

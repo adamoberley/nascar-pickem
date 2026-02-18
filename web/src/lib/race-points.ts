@@ -14,9 +14,11 @@ export interface NormalizedOfficialRaceResult {
   vehicleNumber?: string;
 }
 
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  return value as Record<string, unknown>;
+type UnknownRecord = Record<string, unknown>;
+
+function asRecord(value: unknown): UnknownRecord | null {
+  if (!value || typeof value !== "object") return null;
+  return value as UnknownRecord;
 }
 
 function readString(...values: unknown[]): string | null {
@@ -45,97 +47,53 @@ function normalizeName(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-function normalizeDriverId(value: string): string {
-  return value
-    .toLowerCase()
-    .trim()
-    .replace(/[_\s]+/g, "-")
-    .replace(/[^a-z0-9-]/g, "")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-}
-
 export function normalizeRacePointDrivers(
   racePoints: RacePointsDoc | null | undefined,
 ): NormalizedRaceDriverPoints[] {
-  const record = asRecord(racePoints);
-  if (!record) return [];
+  const racePointsRecord = asRecord(racePoints);
+  const rawDriversValue = racePointsRecord?.drivers;
+  const driversRecord = asRecord(rawDriversValue);
+  const rawDrivers = Array.isArray(rawDriversValue)
+    ? rawDriversValue
+    : driversRecord
+      ? Object.entries(driversRecord).map(([driverId, points]) => ({ driverId, points }))
+      : [];
+  if (rawDrivers.length === 0) return [];
+
   const rows: NormalizedRaceDriverPoints[] = [];
-
-  const pushNormalizedRow = (rawRow: unknown, fallbackDriverId?: string) => {
-    const row = asRecord(rawRow);
-    if (!row) {
-      const basePoints = readNumber(rawRow);
-      if (!fallbackDriverId || basePoints == null) return;
-      rows.push({
-        driverId: fallbackDriverId,
-        basePoints,
-      });
-      return;
-    }
-
+  for (const row of rawDrivers) {
+    const rowRecord = asRecord(row);
+    if (!rowRecord) continue;
     const driverId = readString(
-      row.driverId,
-      row.driver_id,
-      row.driverID,
-      row.providerDriverKey,
-      row.provider_driver_key,
-      row.id,
-      fallbackDriverId,
+      rowRecord.driverId,
+      rowRecord.driver_id,
+      rowRecord.vehicleNumber,
+      rowRecord.vehicle_number,
     );
     const basePoints = readNumber(
-      row.basePoints,
-      row.base_points,
-      row.points,
-      row.score,
-      row.finalPoints,
-      row.final_points,
-      row.totalPoints,
-      row.total_points,
+      rowRecord.basePoints,
+      rowRecord.base_points,
+      rowRecord.points,
     );
-    if (!driverId || basePoints == null) return;
+    if (!driverId || basePoints == null) continue;
 
     const runningPosition = readNumber(
-      row.runningPosition,
-      row.running_position,
-      row.position,
-      row.currentPosition,
-      row.current_position,
+      rowRecord.runningPosition,
+      rowRecord.running_position,
+      rowRecord.position,
     );
     const finishPosition = readNumber(
-      row.finishPosition,
-      row.finish_position,
-      row.finish,
-      row.finalPosition,
-      row.final_position,
+      rowRecord.finishPosition,
+      rowRecord.finish_position,
+      rowRecord.finishingPosition,
+      rowRecord.finishing_position,
     );
-
     rows.push({
       driverId,
       basePoints,
       ...(runningPosition != null ? { runningPosition } : {}),
       ...(finishPosition != null ? { finishPosition } : {}),
     });
-  };
-
-  const rawDrivers =
-    record.drivers ??
-    record.driverPoints ??
-    record.driver_points ??
-    record.pointsByDriver ??
-    record.points_by_driver;
-
-  if (Array.isArray(rawDrivers)) {
-    for (const rawRow of rawDrivers) {
-      pushNormalizedRow(rawRow);
-    }
-    return rows;
-  }
-
-  const rawDriversRecord = asRecord(rawDrivers);
-  if (!rawDriversRecord) return rows;
-  for (const [driverId, rawRow] of Object.entries(rawDriversRecord)) {
-    pushNormalizedRow(rawRow, driverId);
   }
 
   return rows;
@@ -144,54 +102,46 @@ export function normalizeRacePointDrivers(
 export function normalizeOfficialRaceResults(
   racePoints: RacePointsDoc | null | undefined,
 ): NormalizedOfficialRaceResult[] {
-  const record = asRecord(racePoints);
-  if (!record) return [];
-
-  const rawRows = Array.isArray(record.officialResults)
-    ? record.officialResults
-    : Array.isArray(record.official_results)
-      ? record.official_results
-      : Array.isArray(record.results)
-        ? record.results
-        : Array.isArray(record.raceResults)
-          ? record.raceResults
-          : Array.isArray(record.race_results)
-            ? record.race_results
-        : [];
-
+  const racePointsRecord = asRecord(racePoints);
+  const rawRows =
+    racePointsRecord?.officialResults ??
+    racePointsRecord?.official_results ??
+    racePointsRecord?.results;
+  if (!Array.isArray(rawRows)) return [];
   const rows: NormalizedOfficialRaceResult[] = [];
-  const pushOfficialRow = (rawRow: unknown, fallbackKey?: string) => {
-    const row = asRecord(rawRow);
-    if (!row) return;
 
+  for (const row of rawRows) {
+    const rowRecord = asRecord(row);
+    if (!rowRecord) continue;
     const points = readNumber(
-      row.points,
-      row.basePoints,
-      row.base_points,
-      row.score,
+      rowRecord.points,
+      rowRecord.basePoints,
+      rowRecord.base_points,
     );
-    if (points == null) return;
-
+    if (points == null) continue;
     const finishPosition = readNumber(
-      row.finishPosition,
-      row.finish_position,
-      row.position,
-      row.finish,
+      rowRecord.finishPosition,
+      rowRecord.finish_position,
+      rowRecord.position,
+      rowRecord.finishingPosition,
+      rowRecord.finishing_position,
     );
     const driverName =
       readString(
-        row.driverName,
-        row.driver_name,
-        row.name,
-        row.driver,
-        fallbackKey,
+        rowRecord.driverName,
+        rowRecord.driver_name,
+        rowRecord.fullName,
+        rowRecord.full_name,
+        rowRecord.name,
+        rowRecord.vehicleNumber,
+        rowRecord.vehicle_number,
       ) ?? "Unknown Driver";
     const vehicleNumber = readString(
-      row.vehicleNumber,
-      row.vehicle_number,
-      row.carNumber,
-      row.car,
-      row.number,
+      rowRecord.vehicleNumber,
+      rowRecord.vehicle_number,
+      rowRecord.carNumber,
+      rowRecord.car_number,
+      rowRecord.official_car_number,
     );
 
     rows.push({
@@ -200,25 +150,6 @@ export function normalizeOfficialRaceResults(
       points,
       ...(vehicleNumber ? { vehicleNumber } : {}),
     });
-  };
-
-  if (rawRows.length > 0) {
-    for (const rawRow of rawRows) {
-      pushOfficialRow(rawRow);
-    }
-    return rows;
-  }
-
-  const rawResultsRecord = asRecord(
-    record.officialResults ??
-      record.official_results ??
-      record.results ??
-      record.raceResults ??
-      record.race_results,
-  );
-  if (!rawResultsRecord) return rows;
-  for (const [key, rawRow] of Object.entries(rawResultsRecord)) {
-    pushOfficialRow(rawRow, key);
   }
 
   return rows;
@@ -282,18 +213,8 @@ export function buildDriverPointsByDriverId(
   driversById: Record<string, DriverDoc>,
 ): Record<string, number> {
   const byNumber = new Map<string, string>();
-  const byNormalizedId = new Map<string, string>();
-  const byProviderKey = new Map<string, string>();
 
   for (const [driverId, driver] of Object.entries(driversById)) {
-    byNormalizedId.set(normalizeDriverId(driverId), driverId);
-
-    const providerKey = (driver as DriverDoc & { providerDriverKey?: string })
-      .providerDriverKey;
-    if (providerKey) {
-      byProviderKey.set(normalizeDriverId(providerKey), driverId);
-    }
-
     const number = driver.number?.trim();
     if (number) {
       if (!byNumber.has(number)) byNumber.set(number, driverId);
@@ -315,10 +236,6 @@ export function buildDriverPointsByDriverId(
       if (driversById[numericKey]) return numericKey;
       if (byNumber.has(numericKey)) return byNumber.get(numericKey)!;
     }
-
-    const normalized = normalizeDriverId(trimmed);
-    if (byNormalizedId.has(normalized)) return byNormalizedId.get(normalized)!;
-    if (byProviderKey.has(normalized)) return byProviderKey.get(normalized)!;
 
     return trimmed;
   };

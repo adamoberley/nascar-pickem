@@ -398,6 +398,7 @@ final class LeagueRepository {
                         startTime: startTime,
                         lockTime: lockTime,
                         status: status,
+                        nascarRaceId: data["nascarRaceId"] as? Int,
                         tvChannel: { let s = data.string("tvChannel"); return s.isEmpty ? nil : s }()
                     )
                 } ?? []
@@ -418,7 +419,8 @@ final class LeagueRepository {
                         id: doc.documentID,
                         name: data.string("name"),
                         number: data.string("number"),
-                        team: data.string("team")
+                        team: data.string("team"),
+                        nascarDriverId: data["nascarDriverId"] as? Int
                     )
                 } ?? []
 
@@ -469,9 +471,34 @@ final class LeagueRepository {
                         tierA: data.stringArray("tierA"),
                         tierB: data.stringArray("tierB"),
                         tierC: data.stringArray("tierC"),
-                        lockedAt: data.timestamp(for: "lockedAt")
+                        lockedAt: data.timestamp(for: "lockedAt"),
+                        updatedAt: data.timestamp(for: "updatedAt")
                     )
                 )
+            }
+    }
+
+    func observeRacePicks(
+        leagueId: String,
+        raceId: String,
+        onChange: @escaping ([PickItem]) -> Void
+    ) -> ListenerRegistration {
+        db.collection("leagues").document(leagueId).collection("picks")
+            .whereField("raceId", isEqualTo: raceId)
+            .addSnapshotListener { snapshot, _ in
+                let picks: [PickItem] = snapshot?.documents.map { doc in
+                    let data = doc.data()
+                    return PickItem(
+                        raceId: data.string("raceId"),
+                        userId: data.string("userId"),
+                        tierA: data.stringArray("tierA"),
+                        tierB: data.stringArray("tierB"),
+                        tierC: data.stringArray("tierC"),
+                        lockedAt: data.timestamp(for: "lockedAt"),
+                        updatedAt: data.timestamp(for: "updatedAt")
+                    )
+                } ?? []
+                onChange(picks)
             }
     }
 
@@ -595,9 +622,12 @@ final class LeagueRepository {
             .order(by: "asOfDate", descending: true)
             .limit(to: 1)
             .addSnapshotListener { snapshot, _ in
-                guard let doc = snapshot?.documents.first,
-                      let data = doc.data(),
-                      let driversRaw = data["drivers"] as? [[String: Any]] else {
+                guard let doc = snapshot?.documents.first else {
+                    onChange(nil)
+                    return
+                }
+                let data = doc.data()
+                guard let driversRaw = data["drivers"] as? [[String: Any]] else {
                     onChange(nil)
                     return
                 }
@@ -636,11 +666,31 @@ final class LeagueRepository {
         payoutConfigText: String,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
-        db.collection("leagues").document(leagueId).setData([
+        functions.httpsCallable("updateLeagueSettings").call([
+            "leagueId": leagueId,
             "name": name,
             "seasonYear": seasonYear,
             "payoutConfigText": payoutConfigText,
-        ], merge: true) { error in
+        ]) { _, error in
+            if let error {
+                completion(.failure(error))
+                return
+            }
+            completion(.success(()))
+        }
+    }
+
+    func setMemberPaidStatus(
+        leagueId: String,
+        userId: String,
+        paidStatus: String,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        functions.httpsCallable("updateMemberPaidStatus").call([
+            "leagueId": leagueId,
+            "userId": userId,
+            "paidStatus": paidStatus,
+        ]) { _, error in
             if let error {
                 completion(.failure(error))
                 return
@@ -676,6 +726,46 @@ final class LeagueRepository {
         }
     }
 
+    func syncLiveRaceNow(leagueId: String, completion: @escaping (Result<String, Error>) -> Void) {
+        functions.httpsCallable("syncLiveRaceNow").call(["leagueId": leagueId]) { result, error in
+            if let error {
+                completion(.failure(error))
+                return
+            }
+            let data = result?.data as? [String: Any]
+            let updated = data?["updated"] as? Bool ?? false
+            let reason = data?["reason"] as? String
+            if updated {
+                completion(.success("Live points updated from NASCAR.com."))
+                return
+            }
+            completion(.success(reason ?? "No live race in progress or feed unavailable."))
+        }
+    }
+
+    func manualUpsertRacePoints(
+        leagueId: String,
+        raceId: String,
+        driverPoints: [(driverId: String, basePoints: Int)],
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        let payloadDrivers: [[String: Any]] = driverPoints.map {
+            ["driverId": $0.driverId, "basePoints": $0.basePoints]
+        }
+        functions.httpsCallable("manualUpsertRacePoints").call([
+            "leagueId": leagueId,
+            "raceId": raceId,
+            "drivers": payloadDrivers,
+            "source": "ios-admin"
+        ]) { _, error in
+            if let error {
+                completion(.failure(error))
+                return
+            }
+            completion(.success(()))
+        }
+    }
+
     func submitAdjustment(
         leagueId: String,
         raceId: String,
@@ -694,6 +784,89 @@ final class LeagueRepository {
             "reason": reason,
             "source": "ios-admin",
         ]) { _, error in
+            if let error {
+                completion(.failure(error))
+                return
+            }
+            completion(.success(()))
+        }
+    }
+
+    func observeNotifications(
+        userId: String,
+        onChange: @escaping ([UserNotificationItem]) -> Void
+    ) -> ListenerRegistration {
+        db.collection("users")
+            .document(userId)
+            .collection("notifications")
+            .order(by: "createdAt", descending: true)
+            .limit(to: 20)
+            .addSnapshotListener { snapshot, _ in
+                let notifications: [UserNotificationItem] = snapshot?.documents.map { doc in
+                    let data = doc.data()
+                    return UserNotificationItem(
+                        id: doc.documentID,
+                        type: data.string("type"),
+                        leagueId: data.string("leagueId"),
+                        raceId: data.string("raceId"),
+                        title: data.string("title"),
+                        message: data.string("message"),
+                        lockTime: data.timestamp(for: "lockTime"),
+                        createdAt: data.timestamp(for: "createdAt"),
+                        readAt: data.timestamp(for: "readAt")
+                    )
+                } ?? []
+                onChange(notifications)
+            }
+    }
+
+    func markNotificationRead(
+        userId: String,
+        notificationId: String,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        db.collection("users")
+            .document(userId)
+            .collection("notifications")
+            .document(notificationId)
+            .setData(["readAt": FieldValue.serverTimestamp()], merge: true) { error in
+                if let error {
+                    completion(.failure(error))
+                    return
+                }
+                completion(.success(()))
+            }
+    }
+
+    func upsertPushToken(
+        token: String,
+        deviceId: String,
+        platform: String = "ios",
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        functions.httpsCallable("upsertPushToken").call([
+            "token": token,
+            "deviceId": deviceId,
+            "platform": platform,
+        ]) { _, error in
+            if let error {
+                completion(.failure(error))
+                return
+            }
+            completion(.success(()))
+        }
+    }
+
+    func removePushToken(
+        token: String,
+        deviceId: String?,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        var payload: [String: Any] = ["token": token]
+        if let deviceId, !deviceId.isEmpty {
+            payload["deviceId"] = deviceId
+        }
+        functions.httpsCallable("removePushToken").call(payload) { _, error in
             if let error {
                 completion(.failure(error))
                 return

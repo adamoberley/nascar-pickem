@@ -17,6 +17,7 @@ Private season-long NASCAR Pick'Em platform for ~20–21 users with:
   - pick save validation + lock behavior
   - scoring + season ranks
   - ingestion adapter and scheduled refresh jobs
+  - race-week and lock-window missing-pick reminders
   - manual admin overrides + penalties/adjustments
 - Firestore Security Rules enforcing role access and lock-time pick restrictions
 - Web app with player flows and admin operations
@@ -57,11 +58,11 @@ Penalty rule implemented in scoring:
 ## Cloud Functions Implemented
 
 Core behavior:
-1. Compute tiers from latest standings snapshot (`computeRaceTiers`, plus snapshot trigger).
-2. Auto-lock picks at race lock time (`lockPicksAtRaceStart` every 15 minutes + `lockPicksAtRaceStartRaceHour` every minute near race lock windows, with NASCAR live-feed early-lock fallback).
-3. Scheduled ingestion (`ingestLeagueDataDaily`, `refreshRaceResults`) with swappable provider.
-4. Live race sync from NASCAR.com (`syncLiveRaceFromNascar`, scheduled; `syncLiveRaceNow` callable for admins).
-5. Re-score races when lock cycles, live sync, provider refresh, or admin updates change race data.
+1. Compute tiers from latest standings snapshot (`computeRaceTiers`; next-race tier only).
+2. Auto-lock picks by lock time (`lockPicksAtRaceStart` every 30 minutes on Sunday).
+3. Scheduled weekly ingest (`ingestLeagueDataDaily`) and weekly result refresh (`refreshRaceResults`) from NASCAR CF feeds.
+4. Live race sync from NASCAR.com via admin callable (`syncLiveRaceNow`).
+5. Re-score races when lock cycles, manual live sync, result refresh, or admin updates change race data.
 6. Recompute season totals/rank as part of each race re-score.
 7. Admin callables:
    - `manualUpsertRacePoints`
@@ -75,14 +76,19 @@ Player/admin callables:
 - `createLeague`
 - `joinLeagueByInvite`
 - `savePick`
+- `upsertPushToken`
+- `removePushToken`
 
 ## NASCAR Data Ingestion
 
-Provider interface: `functions/src/provider.ts`. See [docs/provider-adapter.md](docs/provider-adapter.md) and [docs/race-results-sources.md](docs/race-results-sources.md).
+Ingest is now direct from NASCAR CF endpoints (no provider adapter required):
 
-- **Static fallback (default):** Built-in 2026 schedule, standings, and Cook Out Clash result. No external API needed.
-- **HTTP adapter (optional):** Set `NASCAR_PROVIDER_BASE_URL` (and optionally `NASCAR_PROVIDER_TOKEN`) for a custom provider implementing the adapter endpoints (schedule, standings, results).
-- **Live race scoring:** NASCAR.com live feed (cf.nascar.com) for in-progress races; see `functions/src/nascar-live.ts` and [docs/race-results-sources.md](docs/race-results-sources.md).
+- **Schedule + race metadata:** `race_list_basic.json`
+- **Standings:** `racinginsights-points-feed.json`
+- **Completed-race results/points:** `weekend-feed.json`
+- **Live race scoring:** `live-feed.json` + `live-stage-points.json`
+
+See [docs/race-results-sources.md](docs/race-results-sources.md).
 
 ## Web App
 
@@ -94,7 +100,7 @@ Player features:
 - Email/password sign-in and account creation
 - Join private league with invite code
 - Home: next race, lock countdown, pick status
-- Picks: tiered selection with validation and save
+- Picks: tiered selection with validation and save (frontend also hard-locks when lock time passes, even if backend lock is delayed)
 - Standings: season leaderboard, sprint (monthly segment) leaderboard, player weekly breakdown
 - Race: select any race to view results, your scored picks with adjusted tags, and live leaderboard during races
 
@@ -122,8 +128,20 @@ To run on iOS:
    - `FirebaseFirestore`
    - `FirebaseFunctions`
    - `FirebaseCore`
+   - `FirebaseMessaging` (required for push reminders)
 3. Add your `GoogleService-Info.plist` from Firebase Console (Project settings → Your apps → iOS) to the app target.
 4. Build and run on a simulator or device.
+
+Push reminder prerequisites (iOS):
+- Enable **Push Notifications** capability in the iOS target.
+- Upload APNs key/cert in Firebase Console (Project settings → Cloud Messaging).
+
+Reminder channel controls (Cloud Functions env):
+- `ENABLE_PUSH_REMINDERS=1` (default on unless set to `0`)
+- `ENABLE_EMAIL_REMINDERS=1` (off by default)
+- `REMINDER_EMAIL_FROM=...` (optional sender when email reminders are enabled)
+
+Email reminders use a Firestore `mail` queue document format compatible with the Firebase **Trigger Email** extension.
 
 ## Testing
 
@@ -161,7 +179,7 @@ Edit `.firebaserc` and set `default.project` to your Firebase project ID.
 npm run setup:env   # copies .env.example → .env if missing
 ```
 
-Edit `.env` in the repo root and set the `VITE_FIREBASE_*` values from Firebase Console → Project settings → Your apps (web). Optional: `NASCAR_PROVIDER_BASE_URL` and `NASCAR_PROVIDER_TOKEN` for a custom data provider (see [docs/provider-adapter.md](docs/provider-adapter.md)).
+Edit `.env` in the repo root and set the `VITE_FIREBASE_*` values from Firebase Console → Project settings → Your apps (web).
 
 ### 4. Install and build
 
@@ -195,12 +213,13 @@ See [docs/admin-onboarding.md](docs/admin-onboarding.md). Summary:
 
 | Doc | Description |
 |-----|-------------|
+| [AGENTS.md](AGENTS.md) | AI/agent workflow: minimal file map, fast commands, gotchas |
 | [docs/README.md](docs/README.md) | Index of all documentation |
 | [docs/setup-checklist.md](docs/setup-checklist.md) | Full setup and deploy steps |
-| [docs/GETTING-FULLY-WORKING.md](docs/GETTING-FULLY-WORKING.md) | Zero-to-playable 2026 league (no external provider) |
+| [docs/GETTING-FULLY-WORKING.md](docs/GETTING-FULLY-WORKING.md) | Zero-to-playable 2026 league (NASCAR CF direct feeds) |
 | [docs/admin-onboarding.md](docs/admin-onboarding.md) | Admin workflow and weekly routine |
-| [docs/provider-adapter.md](docs/provider-adapter.md) | NASCAR data provider contract |
-| [docs/race-results-sources.md](docs/race-results-sources.md) | Standings/results URLs (NASCAR.com, ESPN) |
+| [docs/provider-adapter.md](docs/provider-adapter.md) | Deprecated provider-adapter note |
+| [docs/race-results-sources.md](docs/race-results-sources.md) | NASCAR CF standings/schedule/results/live feed URLs |
 | [docs/index-setup.md](docs/index-setup.md) | Firestore composite index setup |
 | [docs/add-members-userid-index.md](docs/add-members-userid-index.md) | Collection group index on members by userId |
 | [docs/firestore-rules-review.md](docs/firestore-rules-review.md) | Firestore security rules review |
@@ -210,4 +229,4 @@ See [docs/admin-onboarding.md](docs/admin-onboarding.md). Summary:
 
 - Security rules enforce player/admin boundaries and post-lock edit prevention.
 - With ~20 users, full re-score and rank recomputation is inexpensive and reliable.
-- Scheduled re-check catches delayed post-race penalties as long as the provider reflects them.
+- Scheduled re-check catches delayed post-race penalties as long as NASCAR feeds reflect them.

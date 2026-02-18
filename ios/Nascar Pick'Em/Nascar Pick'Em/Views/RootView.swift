@@ -210,7 +210,7 @@ struct BrandPrimaryButtonStyle: ButtonStyle {
             .font(NASCARTheme.textFont(size: 17, weight: .bold))
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 13)
+            .padding(.vertical, 9)
             .background(NASCARTheme.red)
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -227,6 +227,22 @@ struct BrandPrimaryButtonStyle: ButtonStyle {
     }
 }
 
+/// Compact red button for inline data-op actions (matches web AdminTab).
+struct CompactRedButtonStyle: ButtonStyle {
+    @Environment(\.colorScheme) private var colorScheme
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(NASCARTheme.textFont(size: 13, weight: .semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(NASCARTheme.red)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .opacity(configuration.isPressed ? 0.9 : 1)
+    }
+}
+
 struct BrandSecondaryButtonStyle: ButtonStyle {
     @Environment(\.colorScheme) private var colorScheme
 
@@ -235,7 +251,7 @@ struct BrandSecondaryButtonStyle: ButtonStyle {
             .font(NASCARTheme.textFont(size: 16, weight: .semibold))
             .foregroundStyle(colorScheme == .dark ? NASCARTheme.white : NASCARTheme.blue)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
+            .padding(.vertical, 8)
             .background(NASCARTheme.secondarySurface(for: colorScheme))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
@@ -257,7 +273,7 @@ struct BrandYellowButtonStyle: ButtonStyle {
             .font(NASCARTheme.textFont(size: 17, weight: .bold))
             .foregroundStyle(NASCARTheme.black)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 13)
+            .padding(.vertical, 9)
             .background(NASCARTheme.yellow)
             .overlay(
                 RoundedRectangle(cornerRadius: 14, style: .continuous)

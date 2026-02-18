@@ -1,16 +1,5 @@
 import SwiftUI
 
-/// Races excluded from scoring (no-points): Clash, Duels, All-Star. Matches backend NON_POINTS_RACE_IDS.
-private let excludedRaceIds: Set<String> = [
-    "2026-cook-out-clash",
-    "2026-duel-1",
-    "2026-duel-2",
-    "2026-all-star",
-]
-
-/// Last race we pick for; no playoff races. Sprint season ends at Coke Zero Sugar 400.
-private let lastScoredRaceId = "2026-coke-zero-400"
-
 /// Sprint = calendar month. Payout: Feb $30, Mar–Aug $120 each ($750 total).
 private struct SprintConfig {
     let name: String
@@ -39,15 +28,14 @@ struct StandingsView: View {
         SprintConfig(name: "August", index: 7, month: 8, payout: "$120"),
     ]
 
-    /// Races that count for picks: not excluded (Clash, Duels, All-Star) and through Coke Zero Sugar 400 (no playoffs).
+    /// Races that count for picks: February through August (non-playoff segment).
     private var scoredRaces: [RaceItem] {
-        guard let lastRace = viewModel.races.first(where: { $0.id == lastScoredRaceId }) else {
-            return viewModel.races.filter { !excludedRaceIds.contains($0.id) }
-        }
-        return viewModel.races.filter { race in
-            !excludedRaceIds.contains(race.id) && (race.startTime <= lastRace.startTime || race.id == lastScoredRaceId)
+        let races = viewModel.races.filter { race in
+            let month = Calendar.current.component(.month, from: race.startTime)
+            return (2...8).contains(month)
         }
         .sorted { $0.startTime < $1.startTime }
+        return races.isEmpty ? viewModel.races.sorted { $0.startTime < $1.startTime } : races
     }
 
     /// Map race id -> sprint index (1–7) for scored races, by calendar month. Feb=1 … Aug=7.
@@ -439,11 +427,13 @@ struct StandingsView: View {
 
     private static let gold = Color(red: 212 / 255, green: 175 / 255, blue: 55 / 255)
     private static let silver = Color(red: 200 / 255, green: 200 / 255, blue: 188 / 255)
+    private static let bronze = Color(red: 180 / 255, green: 130 / 255, blue: 70 / 255)
 
     private func payoutBackground(for rank: Int) -> Color {
         switch rank {
         case 1: return Self.gold.opacity(colorScheme == .dark ? 0.22 : 0.18)
         case 2: return Self.silver.opacity(colorScheme == .dark ? 0.2 : 0.16)
+        case 3: return Self.bronze.opacity(colorScheme == .dark ? 0.2 : 0.16)
         default: return NASCARTheme.secondarySurface(for: colorScheme)
         }
     }

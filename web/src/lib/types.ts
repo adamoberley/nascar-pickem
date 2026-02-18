@@ -29,6 +29,7 @@ export interface RaceDoc {
   startTime: Timestamp;
   lockTime: Timestamp;
   status: RaceStatus;
+  nascarRaceId?: number;
   providerRaceKey?: string;
   tvChannel?: string;
 }
@@ -37,6 +38,7 @@ export interface DriverDoc {
   name: string;
   number: string;
   team: string;
+  nascarDriverId?: number;
 }
 
 export interface StandingEntry {
@@ -117,4 +119,15 @@ export interface WeeklyScoreDoc {
 export interface SeasonScoreDoc {
   seasonTotal: number;
   rank: number;
+}
+
+export interface UserNotificationDoc {
+  type: "pick_reminder";
+  leagueId: string;
+  raceId: string;
+  title: string;
+  message: string;
+  lockTime?: Timestamp;
+  createdAt?: Timestamp;
+  readAt?: Timestamp;
 }

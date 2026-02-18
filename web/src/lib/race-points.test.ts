@@ -7,10 +7,10 @@ import {
 } from "./race-points";
 
 describe("normalizeRacePointDrivers", () => {
-  it("accepts legacy points field for race drivers", () => {
+  it("normalizes strict racePoints.drivers rows", () => {
     const rows = normalizeRacePointDrivers({
       drivers: [
-        { driverId: "tyler-reddick", points: 58, running_position: 2 },
+        { driverId: "tyler-reddick", basePoints: 58, runningPosition: 2 },
       ],
     } as any);
 
@@ -23,11 +23,41 @@ describe("normalizeRacePointDrivers", () => {
     ]);
   });
 
-  it("accepts map-shaped drivers with numeric strings", () => {
+  it("ignores malformed driver rows", () => {
+    const rows = normalizeRacePointDrivers({
+      drivers: [{ driverId: "ross-chastain" }, { basePoints: 19 }],
+    } as any);
+
+    expect(rows).toEqual([]);
+  });
+
+  it("accepts legacy race-point keys", () => {
+    const rows = normalizeRacePointDrivers({
+      drivers: [
+        {
+          driver_id: "45",
+          points: 58,
+          running_position: 2,
+          finish_position: 3,
+        },
+      ],
+    } as any);
+
+    expect(rows).toEqual([
+      {
+        driverId: "45",
+        basePoints: 58,
+        runningPosition: 2,
+        finishPosition: 3,
+      },
+    ]);
+  });
+
+  it("accepts legacy drivers object maps", () => {
     const rows = normalizeRacePointDrivers({
       drivers: {
-        "ross-chastain": "19",
-        "tyler-reddick": { points: "58", finish_position: "1" },
+        "ross-chastain": 19,
+        "tyler-reddick": "58",
       },
     } as any);
 
@@ -39,20 +69,19 @@ describe("normalizeRacePointDrivers", () => {
       {
         driverId: "tyler-reddick",
         basePoints: 58,
-        finishPosition: 1,
       },
     ]);
   });
 });
 
 describe("normalizeOfficialRaceResults", () => {
-  it("accepts legacy results field", () => {
+  it("normalizes strict officialResults rows", () => {
     const rows = normalizeOfficialRaceResults({
-      results: [
+      officialResults: [
         {
-          position: 1,
-          driver: "Ross Chastain",
-          car: "1",
+          finishPosition: 1,
+          driverName: "Ross Chastain",
+          vehicleNumber: "1",
           points: 40,
         },
       ],
@@ -68,19 +97,32 @@ describe("normalizeOfficialRaceResults", () => {
     ]);
   });
 
-  it("accepts map-shaped results with numeric strings", () => {
+  it("ignores malformed official rows", () => {
     const rows = normalizeOfficialRaceResults({
-      results: {
-        "Ross Chastain": { position: "2", car: 1, points: "19" },
-      },
+      officialResults: [{ finishPosition: 2, driverName: "Ross Chastain" }],
+    } as any);
+
+    expect(rows).toEqual([]);
+  });
+
+  it("reads legacy official_results rows", () => {
+    const rows = normalizeOfficialRaceResults({
+      official_results: [
+        {
+          finishing_position: 1,
+          driver_name: "Ross Chastain",
+          official_car_number: "1",
+          points: "40",
+        },
+      ],
     } as any);
 
     expect(rows).toEqual([
       {
-        finishPosition: 2,
+        finishPosition: 1,
         driverName: "Ross Chastain",
         vehicleNumber: "1",
-        points: 19,
+        points: 40,
       },
     ]);
   });
@@ -117,24 +159,22 @@ describe("mapOfficialResultsToDriverPoints", () => {
 });
 
 describe("buildDriverPointsByDriverId", () => {
-  it("resolves driver keys using number and provider key aliases", () => {
+  it("resolves driver keys using direct ids and car numbers", () => {
     const map = buildDriverPointsByDriverId(
       [
         { driverId: "45", basePoints: 58 },
-        { driverId: "Ross_Chastain", basePoints: 19 },
+        { driverId: "ross-chastain", basePoints: 19 },
       ],
       {
         "tyler-reddick": {
           name: "Tyler Reddick",
           number: "45",
           team: "23XI",
-          providerDriverKey: "tyler-reddick",
         } as any,
         "ross-chastain": {
           name: "Ross Chastain",
           number: "1",
           team: "Trackhouse",
-          providerDriverKey: "ross-chastain",
         } as any,
       },
     );

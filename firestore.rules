@@ -23,14 +23,23 @@ service cloud.firestore {
       return /databases/$(database)/documents/leagues/$(leagueId)/races/$(raceId);
     }
 
-    function raceLocked(leagueId, raceId) {
-      return !exists(racePath(leagueId, raceId)) ||
-        get(racePath(leagueId, raceId)).data.status in ["locked", "completed"] ||
-        request.time >= get(racePath(leagueId, raceId)).data.lockTime;
+    function raceStarted(leagueId, raceId) {
+      return exists(racePath(leagueId, raceId)) &&
+        (request.time >= get(racePath(leagueId, raceId)).data.startTime ||
+         get(racePath(leagueId, raceId)).data.status == "completed");
     }
 
     match /users/{userId} {
       allow read, write: if isSignedIn() && request.auth.uid == userId;
+
+      match /notifications/{notificationId} {
+        allow read, update: if isSignedIn() && request.auth.uid == userId;
+        allow create, delete: if false;
+      }
+
+      match /devices/{deviceId} {
+        allow read, create, update, delete: if isSignedIn() && request.auth.uid == userId;
+      }
     }
 
     // Collection group query rule for members - allows users to read their own member documents
@@ -77,7 +86,7 @@ service cloud.firestore {
         allow read: if isMember(leagueId) &&
           (isAdmin(leagueId) ||
            resource.data.userId == request.auth.uid ||
-           (resource.data.raceId is string && raceLocked(leagueId, resource.data.raceId)));
+           (resource.data.raceId is string && raceStarted(leagueId, resource.data.raceId)));
 
         allow create, update, delete: if false;
       }

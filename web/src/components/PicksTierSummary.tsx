@@ -42,9 +42,7 @@ export function PicksTierSummary({
                 <span className="picks-tier-position" aria-label={`Position ${position}`}>P{position}</span>
               ) : points != null ? (
                 <span className="picks-tier-points" aria-label={`${points} points`}>{points}</span>
-              ) : (
-                <span className="check-icon" aria-hidden>✓</span>
-              )}
+              ) : null}
             </div>
           );
         })}

@@ -60,21 +60,36 @@ export async function computeTiersForRace(
 
 export async function recomputeTiersForUpcomingRaces(leagueId: string): Promise<void> {
   // Query without orderBy to avoid requiring a composite index on (status, startTime).
-  const raceSnap = await racesRef(leagueId).where("status", "==", "scheduled").get();
+  const [raceSnap, tiersSnap] = await Promise.all([
+    racesRef(leagueId).where("status", "==", "scheduled").get(),
+    tiersRef(leagueId).get(),
+  ]);
 
   const sorted = raceSnap.docs
     .map((d) => ({ id: d.id, data: d.data() as RaceDoc }))
     .sort((a, b) => a.data.startTime.toMillis() - b.data.startTime.toMillis());
 
-  logger.info("Recomputing tiers for upcoming races", {
+  const nowMs = Date.now();
+  const nextRace =
+    sorted.find((r) => r.data.lockTime.toMillis() > nowMs) ??
+    sorted[0] ??
+    null;
+  const targetRaceId = nextRace?.id ?? null;
+
+  logger.info("Recomputing tiers for next race only", {
     leagueId,
     scheduledRaceCount: sorted.length,
-    raceIds: sorted.map((r) => r.id),
+    targetRaceId,
   });
 
-  await Promise.all(
-    sorted.map(async (race) => {
-      await computeTiersForRace(leagueId, race.id);
-    }),
-  );
+  if (targetRaceId) {
+    await computeTiersForRace(leagueId, targetRaceId);
+  }
+
+  const staleTierDeletes: Promise<FirebaseFirestore.WriteResult>[] = [];
+  tiersSnap.forEach((docSnap) => {
+    if (targetRaceId && docSnap.id === targetRaceId) return;
+    staleTierDeletes.push(tiersRef(leagueId).doc(docSnap.id).delete());
+  });
+  await Promise.all(staleTierDeletes);
 }

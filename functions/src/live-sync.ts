@@ -1,3 +1,4 @@
+import { FieldValue } from "firebase-admin/firestore";
 import { logger } from "firebase-functions/v2";
 import {
   driversRef,
@@ -24,6 +25,49 @@ import type { DriverDoc, LeagueDoc, RaceDoc, RaceDriverPoints } from "./types";
 
 export type LiveSyncResult = { updated: true } | { updated: false; reason: string };
 
+function raceHasLockedOrStarted(race: RaceDoc, nowMs: number): boolean {
+  const lockMs = race.lockTime?.toMillis?.() ?? Number.POSITIVE_INFINITY;
+  const startMs = race.startTime?.toMillis?.() ?? Number.POSITIVE_INFINITY;
+  return lockMs <= nowMs || startMs <= nowMs;
+}
+
+async function clearFutureNascarLiveRacePoints(
+  leagueId: string,
+  futureRaceDocs: FirebaseFirestore.QueryDocumentSnapshot[],
+): Promise<number> {
+  if (futureRaceDocs.length === 0) return 0;
+
+  const pointSnaps = await Promise.all(
+    futureRaceDocs.map((raceDocSnap) => racePointsRef(leagueId).doc(raceDocSnap.id).get()),
+  );
+  const writes: Array<Promise<FirebaseFirestore.WriteResult>> = [];
+
+  pointSnaps.forEach((snap, index) => {
+    if (!snap.exists) return;
+    const data = snap.data() as { source?: string } | undefined;
+    if (data?.source !== "nascar-live") return;
+    writes.push(
+      racePointsRef(leagueId).doc(futureRaceDocs[index].id).set(
+        {
+          source: FieldValue.delete(),
+          drivers: FieldValue.delete(),
+          liveLapNumber: FieldValue.delete(),
+          liveLapsInRace: FieldValue.delete(),
+          liveLapsToGo: FieldValue.delete(),
+          liveStage: FieldValue.delete(),
+          lastSyncedAt: nowTimestamp(),
+        },
+        { merge: true },
+      ),
+    );
+  });
+
+  if (writes.length > 0) {
+    await Promise.all(writes);
+  }
+  return writes.length;
+}
+
 export async function applyNascarLiveFeedToLeague(
   leagueId: string,
   feedOverride?: FetchLiveFeedResult | null,
@@ -47,40 +91,53 @@ export async function applyNascarLiveFeedToLeague(
     return { updated: false, reason: "No races in this league." };
   }
 
+  const liveEligibleRaceDocs = raceDocs.filter((raceDocSnap) =>
+    raceHasLockedOrStarted(raceDocSnap.data() as RaceDoc, nowMs),
+  );
+  const futureRaceDocs = raceDocs.filter(
+    (raceDocSnap) => !raceHasLockedOrStarted(raceDocSnap.data() as RaceDoc, nowMs),
+  );
+  const clearedFutureLiveDocs = await clearFutureNascarLiveRacePoints(leagueId, futureRaceDocs);
+  if (clearedFutureLiveDocs > 0) {
+    logger.info("Cleared stale nascar-live points from future races", {
+      leagueId,
+      clearedFutureLiveDocs,
+    });
+  }
+  if (liveEligibleRaceDocs.length === 0) {
+    return { updated: false, reason: "No race has reached lock/start time yet." };
+  }
+
   const raceList =
     seasonYear != null ? await fetchNascarRaceListBasic(seasonYear) : [];
 
   const nascarRaceIdByLeagueRace = new Map<string, number>();
-  raceDocs.forEach((raceDocSnap) => {
+  liveEligibleRaceDocs.forEach((raceDocSnap) => {
     const race = raceDocSnap.data() as RaceDoc;
-    const nascarRaceId = resolveNascarRaceIdForLeagueRace({
-      leagueRaceId: raceDocSnap.id,
-      leagueRaceName: race.name,
-      leagueRaceStartTimeMs: race.startTime.toMillis(),
-      raceList,
-    });
+    const nascarRaceId =
+      typeof race.nascarRaceId === "number"
+        ? race.nascarRaceId
+        : resolveNascarRaceIdForLeagueRace({
+            leagueRaceId: raceDocSnap.id,
+            leagueRaceName: race.name,
+            leagueRaceStartTimeMs: race.startTime.toMillis(),
+            raceList,
+          });
     if (nascarRaceId != null) {
       nascarRaceIdByLeagueRace.set(raceDocSnap.id, nascarRaceId);
     }
   });
 
-  const singleRaceInLeague = raceDocs.length === 1;
-  const theOnlyRaceId = singleRaceInLeague ? raceDocs[0].id : null;
-  const pastRaces = raceDocs.filter((d) => (d.data() as RaceDoc).startTime.toMillis() <= nowMs);
+  const singleRaceInLeague = liveEligibleRaceDocs.length === 1;
+  const theOnlyRaceId = singleRaceInLeague ? liveEligibleRaceDocs[0].id : null;
+  const pastRaces = liveEligibleRaceDocs.filter((d) => (d.data() as RaceDoc).startTime.toMillis() <= nowMs);
   const mostRecentStarted =
     pastRaces.length > 0
       ? pastRaces.reduce((a, b) =>
           (a.data() as RaceDoc).startTime.toMillis() >= (b.data() as RaceDoc).startTime.toMillis() ? a : b,
         )
       : null;
-  const futureRaces = raceDocs.filter((d) => (d.data() as RaceDoc).startTime.toMillis() > nowMs);
-  const nextUpcoming =
-    futureRaces.length > 0
-      ? futureRaces.reduce((a, b) =>
-          (a.data() as RaceDoc).startTime.toMillis() <= (b.data() as RaceDoc).startTime.toMillis() ? a : b,
-        )
-      : null;
-  const fallbackRaceId = mostRecentStarted?.id ?? nextUpcoming?.id ?? theOnlyRaceId;
+  const fallbackRaceId = mostRecentStarted?.id ?? theOnlyRaceId;
   const activeDriverIds = new Set<string>();
   const latestSnapshotDoc = latestStandingsSnap?.docs[0];
   if (latestSnapshotDoc) {
@@ -96,7 +153,10 @@ export async function applyNascarLiveFeedToLeague(
   // When live feed is unavailable, try stage points only using the resolved NASCAR race_id for the current league race.
   if (!feed) {
     const targetRaceId = fallbackRaceId;
-    if (!targetRaceId || seasonYear == null) {
+    if (!targetRaceId) {
+      return { updated: false, reason: "Live feed unavailable and no race is currently lock/start eligible." };
+    }
+    if (seasonYear == null) {
       return { updated: false, reason: "Live feed unavailable." };
     }
     const nascarRaceId = nascarRaceIdByLeagueRace.get(targetRaceId) ?? null;
@@ -139,67 +199,76 @@ export async function applyNascarLiveFeedToLeague(
       ? await fetchNascarLiveStagePoints(seasonYear, feed.raceId)
       : new Map<string, number>();
 
-  let updated: LiveSyncResult = { updated: false, reason: "No matching race found for this league." };
-  for (const raceDocSnap of raceDocs) {
+  const candidates = liveEligibleRaceDocs.map((raceDocSnap) => {
     const race = raceDocSnap.data() as RaceDoc;
     const raceId = raceDocSnap.id;
-    const nameMatches = runNameMatchesRace(feed.runName, race.name);
-    const isOnlyRace = theOnlyRaceId !== null && raceId === theOnlyRaceId;
-    const isFallback = fallbackRaceId !== null && raceId === fallbackRaceId;
-    const matchesNascarRaceId =
-      feed.raceId != null && nascarRaceIdByLeagueRace.get(raceId) === feed.raceId;
-    const useThisRace = nameMatches || isOnlyRace || isFallback || matchesNascarRaceId;
-    if (!useThisRace) continue;
-
-    const byDriverId = new Map<string, { basePoints: number; runningPosition?: number }>();
-    for (const [vehicleNum, stagePts] of stagePointsByVehicle) {
-      const driverId = resolveDriverIdFromVehicleNumber(vehicleNum, numberToDriverId);
-      if (driverId) byDriverId.set(driverId, { basePoints: stagePts });
-    }
-    for (const fd of feed.drivers) {
-      const driverId = resolveDriverIdFromVehicleNumber(fd.vehicleNumber, numberToDriverId);
-      if (driverId) {
-        const normalizedVehicleNum = fd.vehicleNumber.trim();
-        const numericVehicleNum = String(Number(fd.vehicleNumber));
-        const stagePts =
-          stagePointsByVehicle.get(normalizedVehicleNum) ??
-          stagePointsByVehicle.get(numericVehicleNum) ??
-          0;
-        byDriverId.set(driverId, {
-          basePoints: fd.basePoints + stagePts,
-          runningPosition: fd.runningPosition,
-        });
-      }
-    }
-
-    const drivers: RaceDriverPoints[] = Array.from(byDriverId.entries()).map(([driverId, { basePoints, runningPosition }]) =>
-      runningPosition != null ? { driverId, basePoints, runningPosition } : { driverId, basePoints },
-    );
-    if (drivers.length === 0) {
-      updated = { updated: false, reason: "No drivers matched by car number between stage/feed and league." };
-      continue;
-    }
-
-    const racePointsData: Record<string, unknown> = {
-      drivers,
-      source: "nascar-live",
-      lastSyncedAt: nowTimestamp(),
+    return {
+      raceDocSnap,
+      race,
+      raceId,
+      nameMatches: runNameMatchesRace(feed.runName, race.name),
+      isOnlyRace: theOnlyRaceId !== null && raceId === theOnlyRaceId,
+      isFallback: fallbackRaceId !== null && raceId === fallbackRaceId,
+      matchesNascarRaceId:
+        feed.raceId != null && nascarRaceIdByLeagueRace.get(raceId) === feed.raceId,
     };
-    if (feed.lapNumber != null) racePointsData.liveLapNumber = feed.lapNumber;
-    if (feed.lapsInRace != null) racePointsData.liveLapsInRace = feed.lapsInRace;
-    if (feed.lapsToGo != null) racePointsData.liveLapsToGo = feed.lapsToGo;
-    if (feed.stage) {
-      racePointsData.liveStage = {
-        stageNum: feed.stage.stageNum,
-        finishAtLap: feed.stage.finishAtLap,
-        lapsInStage: feed.stage.lapsInStage,
-      };
-    }
-    await racePointsRef(leagueId).doc(raceId).set(racePointsData, { merge: true });
-    await rescoreRace(leagueId, raceId);
-    return { updated: true };
+  });
+
+  const targetCandidate =
+    candidates.find((c) => c.matchesNascarRaceId) ??
+    candidates.find((c) => c.nameMatches) ??
+    candidates.find((c) => c.isOnlyRace || c.isFallback);
+
+  if (!targetCandidate) {
+    return { updated: false, reason: "No matching lock/start-eligible race found for this league." };
   }
-  return updated;
+
+  const byDriverId = new Map<string, { basePoints: number; runningPosition?: number }>();
+  for (const [vehicleNum, stagePts] of stagePointsByVehicle) {
+    const driverId = resolveDriverIdFromVehicleNumber(vehicleNum, numberToDriverId);
+    if (driverId) byDriverId.set(driverId, { basePoints: stagePts });
+  }
+  for (const fd of feed.drivers) {
+    const driverId = resolveDriverIdFromVehicleNumber(fd.vehicleNumber, numberToDriverId);
+    if (driverId) {
+      const normalizedVehicleNum = fd.vehicleNumber.trim();
+      const numericVehicleNum = String(Number(fd.vehicleNumber));
+      const stagePts =
+        stagePointsByVehicle.get(normalizedVehicleNum) ??
+        stagePointsByVehicle.get(numericVehicleNum) ??
+        0;
+      byDriverId.set(driverId, {
+        basePoints: fd.basePoints + stagePts,
+        runningPosition: fd.runningPosition,
+      });
+    }
+  }
+
+  const drivers: RaceDriverPoints[] = Array.from(byDriverId.entries()).map(([driverId, { basePoints, runningPosition }]) =>
+    runningPosition != null ? { driverId, basePoints, runningPosition } : { driverId, basePoints },
+  );
+  if (drivers.length === 0) {
+    return { updated: false, reason: "No drivers matched by car number between stage/feed and league." };
+  }
+
+  const racePointsData: Record<string, unknown> = {
+    drivers,
+    source: "nascar-live",
+    lastSyncedAt: nowTimestamp(),
+  };
+  if (feed.lapNumber != null) racePointsData.liveLapNumber = feed.lapNumber;
+  if (feed.lapsInRace != null) racePointsData.liveLapsInRace = feed.lapsInRace;
+  if (feed.lapsToGo != null) racePointsData.liveLapsToGo = feed.lapsToGo;
+  if (feed.stage) {
+    racePointsData.liveStage = {
+      stageNum: feed.stage.stageNum,
+      finishAtLap: feed.stage.finishAtLap,
+      lapsInStage: feed.stage.lapsInStage,
+    };
+  }
+  await racePointsRef(leagueId).doc(targetCandidate.raceId).set(racePointsData, { merge: true });
+  await rescoreRace(leagueId, targetCandidate.raceId);
+  return { updated: true };
 }
 
 export async function syncLiveRaceForLeagues(

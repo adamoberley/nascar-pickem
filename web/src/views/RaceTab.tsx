@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type {
   DriverDoc,
   MemberDoc,
@@ -23,10 +23,13 @@ interface Props {
   selectedRaceId: string | null;
   setSelectedRaceId: (value: string | null) => void;
   selectedRaceTiers: TierDoc | null;
-  selectedRaceScoreState: { data: WeeklyScoreDoc | null };
-  selectedRacePickState: { data: { tierA: string[]; tierB: string[]; tierC: string[] } | null };
+  selectedRaceScoreState: { data: WeeklyScoreDoc | null; loading: boolean };
+  selectedRacePickState: {
+    data: { tierA: string[]; tierB: string[]; tierC: string[] } | null;
+    loading: boolean;
+  };
   driversById: Record<string, DriverDoc>;
-  selectedRacePointsState: { data: RacePointsDoc | null };
+  selectedRacePointsState: { data: RacePointsDoc | null; loading: boolean };
   selectedRaceAdjustmentsState: { data: Array<{ driverId: string; deltaPoints: number }> };
   selectedRacePicksState: {
     data: Array<PickDoc & { id: string }>;
@@ -52,6 +55,34 @@ interface RaceResultRow {
   points: number;
 }
 
+function RaceLoadingState({
+  label,
+  rows,
+}: {
+  label: string;
+  rows: number;
+}) {
+  const widthClasses = ["w100", "w92", "w88", "w96", "w84", "w90", "w86", "w94"];
+  return (
+    <div className="race-loading-state" aria-live="polite" aria-busy="true">
+      <p className="race-loading-label">
+        <span className="race-loading-spinner" aria-hidden />
+        {label}…
+      </p>
+      <div className="race-loading-rows">
+        {Array.from({ length: rows }).map((_, index) => (
+          <div
+            // eslint-disable-next-line react/no-array-index-key
+            key={`${label}-${index}`}
+            className={`race-loading-row race-loading-row--${widthClasses[index % widthClasses.length]}`}
+            aria-hidden
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function RaceTab({
   races,
   selectedRace,
@@ -69,6 +100,14 @@ export function RaceTab({
   canSeeAllPicks,
 }: Props) {
   const [expandedLeaderboardUserId, setExpandedLeaderboardUserId] = useState<string | null>(null);
+  useEffect(() => {
+    setExpandedLeaderboardUserId(null);
+  }, [selectedRaceId]);
+
+  const isRaceDataLoading =
+    selectedRacePickState.loading ||
+    selectedRaceScoreState.loading ||
+    selectedRacePointsState.loading;
   const adjustmentByDriverId = useMemo(() => {
     const map = new Map<string, number>();
     for (const adjustment of selectedRaceAdjustmentsState.data) {
@@ -110,16 +149,33 @@ export function RaceTab({
     officialResultPointsByDriverId,
   ]);
   const selectedRacePickTotal = useMemo(() => {
+    if (selectedRacePickState.loading || selectedRacePointsState.loading) return null;
     const pick = selectedRacePickState.data;
     if (!pick) return null;
     return [...pick.tierA, ...pick.tierB, ...pick.tierC].reduce(
       (sum, driverId) => sum + (raceDriverPointsByDriverId[driverId] ?? 0),
       0,
     );
-  }, [selectedRacePickState.data, raceDriverPointsByDriverId]);
+  }, [
+    raceDriverPointsByDriverId,
+    selectedRacePickState.data,
+    selectedRacePickState.loading,
+    selectedRacePointsState.loading,
+  ]);
+  const selectedRaceIsFuture =
+    Boolean(selectedRace) &&
+    selectedRace?.status === "scheduled" &&
+    selectedRace.lockTime.toMillis() > Date.now();
+  const selectedRaceHasScoringData =
+    Boolean(selectedRaceScoreState.data) ||
+    normalizedOfficialResults.length > 0 ||
+    normalizedRacePointDrivers.length > 0;
   const selectedRaceDisplayTotal =
-    selectedRaceScoreState.data?.weeklyTotal ?? selectedRacePickTotal;
+    isRaceDataLoading || (selectedRaceIsFuture && !selectedRaceHasScoringData)
+      ? null
+      : selectedRaceScoreState.data?.weeklyTotal ?? selectedRacePickTotal;
   const selectedRaceHasPick =
+    !selectedRacePickState.loading &&
     Boolean(selectedRacePickState.data) &&
     (selectedRacePickState.data?.tierA.length ?? 0) +
       (selectedRacePickState.data?.tierB.length ?? 0) +
@@ -293,14 +349,20 @@ export function RaceTab({
           <div className="app-card">
             <div className="race-your-picks-head">
               <h2 className="section-title">Your Picks</h2>
-              {selectedRaceDisplayTotal != null ? (
+              {isRaceDataLoading ? (
+                <span className="race-total race-total--loading" aria-hidden>
+                  <span className="race-loading-pill" />
+                </span>
+              ) : selectedRaceDisplayTotal != null ? (
                 <span className="race-total">
                   <span className="race-total-label">Total</span>
                   <span className="race-total-value">{selectedRaceDisplayTotal}</span>
                 </span>
               ) : null}
             </div>
-            {selectedRaceHasPick && selectedRacePickState.data ? (
+            {selectedRacePickState.loading ? (
+              <RaceLoadingState label="Loading your pick" rows={3} />
+            ) : selectedRaceHasPick && selectedRacePickState.data ? (
               <div className="your-picks-tiers">
                 <PicksTierSummary
                   title="Tier A"
@@ -347,9 +409,9 @@ export function RaceTab({
               ) : null}
             </div>
             {!canSeeAllPicks ? (
-              <p className="race-meta">All picks become visible when the race locks.</p>
+              <p className="race-meta">All picks become visible when the race starts.</p>
             ) : selectedRacePicksState.loading ? (
-              <p className="race-meta">Loading race picks…</p>
+              <RaceLoadingState label="Loading race picks" rows={4} />
             ) : raceLeaderboardRows.length === 0 ? (
               <p className="race-meta">No picks submitted for this race yet.</p>
             ) : (
@@ -421,7 +483,9 @@ export function RaceTab({
 
           <div className="app-card">
             <h2 className="section-title">Results</h2>
-            {raceResultRows.length ? (
+            {selectedRacePointsState.loading ? (
+              <RaceLoadingState label="Loading results" rows={6} />
+            ) : raceResultRows.length ? (
               <>
                 <div className="race-results-headings" aria-hidden>
                   <span className="race-result-finish">Finish</span>

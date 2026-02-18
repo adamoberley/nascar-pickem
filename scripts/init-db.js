@@ -62,60 +62,6 @@ async function createLeague(name, inviteCode, seasonYear, adminUserId, adminDisp
 
 async function ingestData(leagueId) {
   console.log("Ingesting schedule and standings...");
-  
-  // Import the ingest function dynamically
-  const { ingestScheduleAndStandings } = require("../functions/lib/index.bundle.js");
-  
-  // Call the function - it's exported from the bundle
-  // Actually, we need to call it differently since it's bundled
-  // Let's use the Firebase Functions emulator or call it via HTTP
-  
-  // For now, let's use a direct approach by importing the source
-  // But that requires TypeScript compilation...
-  
-  // Actually, the best approach is to use the deployed function via HTTP
-  // Or we can manually create the data
-  
-  // Let's create a simple version that uses the provider directly.
-  // For 2026, use the full schedule from functions/src/schedule-2026.json.
-  const schedule2026 = require("../functions/src/schedule-2026.json");
-  const provider = {
-    name: "static-fallback-provider",
-    async fetchSchedule(seasonYear) {
-      if (seasonYear === 2026) {
-        return schedule2026;
-      }
-      return [
-        {
-          id: `${seasonYear}-daytona-500`,
-          name: "Daytona 500",
-          track: "Daytona International Speedway",
-          weekIndex: 1,
-          startTimeIso: `${seasonYear}-02-16T19:30:00.000Z`,
-          status: "scheduled",
-        },
-        {
-          id: `${seasonYear}-atlanta`,
-          name: "Ambetter Health 400",
-          track: "Atlanta Motor Speedway",
-          weekIndex: 2,
-          startTimeIso: `${seasonYear}-02-23T20:00:00.000Z`,
-          status: "scheduled",
-        },
-        {
-          id: `${seasonYear}-las-vegas`,
-          name: "Pennzoil 400",
-          track: "Las Vegas Motor Speedway",
-          weekIndex: 3,
-          startTimeIso: `${seasonYear}-03-09T20:30:00.000Z`,
-          status: "scheduled",
-        },
-      ];
-    },
-    async fetchStandings() {
-      return [];
-    },
-  };
 
   const leagueSnap = await db.collection("leagues").doc(leagueId).get();
   if (!leagueSnap.exists) {
@@ -124,13 +70,79 @@ async function ingestData(leagueId) {
 
   const league = leagueSnap.data();
   const seasonYear = league.seasonYear;
+  const toDocId = (input) =>
+    String(input || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "")
+      .slice(0, 120);
+  const parseNascarDate = (value) => {
+    if (!value || typeof value !== "string") return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    const withZone = /(?:z|[+\-]\d{2}:?\d{2})$/i.test(trimmed)
+      ? trimmed
+      : `${trimmed}Z`;
+    const parsed = new Date(withZone);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
+  const buildRaceIds = (races) => {
+    const used = new Set();
+    const byRaceId = new Map();
+    for (const race of races) {
+      const base = toDocId(`${seasonYear}-${race.race_name || `race-${race.race_id}`}`);
+      let candidate = base || `${seasonYear}-race-${race.race_id}`;
+      if (used.has(candidate)) {
+        candidate =
+          toDocId(`${candidate}-${race.track_name || ""}`) ||
+          `${candidate}-${race.race_id}`;
+      }
+      if (used.has(candidate)) {
+        candidate =
+          toDocId(`${candidate}-${race.race_id}`) ||
+          `${seasonYear}-race-${race.race_id}`;
+      }
+      while (used.has(candidate)) {
+        candidate = `${candidate}-${race.race_id}`;
+      }
+      used.add(candidate);
+      byRaceId.set(race.race_id, candidate);
+    }
+    return byRaceId;
+  };
 
-  const schedule = await provider.fetchSchedule(seasonYear);
+  const raceListRes = await fetch(
+    `https://cf.nascar.com/cacher/${seasonYear}/1/race_list_basic.json`
+  );
+  if (!raceListRes.ok) {
+    throw new Error(`Failed to load race_list_basic.json (${raceListRes.status})`);
+  }
+  const raceList = await raceListRes.json();
+  const pointsRaces = (Array.isArray(raceList) ? raceList : [])
+    .filter((race) => typeof race?.race_id === "number")
+    .filter((race) => (race.series_id ?? 1) === 1 && (race.race_type_id ?? 1) === 1)
+    .sort((a, b) => {
+      const aMs = parseNascarDate(a.race_date || a.date_scheduled)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+      const bMs = parseNascarDate(b.race_date || b.date_scheduled)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+      return aMs - bMs || a.race_id - b.race_id;
+    });
+  const raceIdByNascarRaceId = buildRaceIds(pointsRaces);
 
   // Create races
-  const raceWrites = schedule.map((race) => {
-    const raceId = race.id.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase();
-    const startTime = Timestamp.fromDate(new Date(race.startTimeIso));
+  const raceWrites = pointsRaces.map((race, index) => {
+    const raceId = raceIdByNascarRaceId.get(race.race_id);
+    const raceDate = parseNascarDate(race.race_date || race.date_scheduled) || new Date();
+    const startTime = Timestamp.fromDate(raceDate);
+    const now = Date.now();
+    const scheduledLaps = typeof race.scheduled_laps === "number" ? race.scheduled_laps : 0;
+    const actualLaps = typeof race.actual_laps === "number" ? race.actual_laps : 0;
+    const status =
+      actualLaps > 0 && (scheduledLaps === 0 || actualLaps >= scheduledLaps)
+        ? "completed"
+        : startTime.toMillis() <= now
+        ? "locked"
+        : "scheduled";
 
     return db
       .collection("leagues")
@@ -139,13 +151,14 @@ async function ingestData(leagueId) {
       .doc(raceId)
       .set(
         {
-          name: race.name,
-          track: race.track,
-          weekIndex: race.weekIndex,
+          name: race.race_name || `Race ${index + 1}`,
+          track: race.track_name || "",
+          weekIndex: index + 1,
           startTime,
           lockTime: startTime,
-          status: race.status || "scheduled",
-          providerRaceKey: race.id,
+          status,
+          nascarRaceId: race.race_id,
+          tvChannel: race.television_broadcaster || "",
           lastSyncedAt: Timestamp.now(),
         },
         { merge: true }
@@ -153,7 +166,7 @@ async function ingestData(leagueId) {
   });
 
   await Promise.all(raceWrites);
-  console.log(`Created ${schedule.length} races`);
+  console.log(`Created ${pointsRaces.length} races`);
 }
 
 async function main() {

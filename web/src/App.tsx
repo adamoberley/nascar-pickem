@@ -5,6 +5,7 @@ import {
   limit,
   orderBy,
   query,
+  updateDoc,
   where,
   type Query,
 } from "firebase/firestore";
@@ -28,12 +29,14 @@ import type {
   SeasonScoreDoc,
   StandingsSnapshotDoc,
   TierDoc,
+  UserNotificationDoc,
   WeeklyScoreDoc,
 } from "./lib/types";
 import { logout, useAuthState } from "./hooks/useAuth";
 import { useFirestoreCollection, useFirestoreDocument } from "./hooks/useFirestore";
 import { usePickDraft } from "./hooks/usePickDraft";
 import { useRaceSelection } from "./hooks/useRaceSelection";
+import { useStandingsData } from "./hooks/useStandingsData";
 import { Header } from "./components/Header";
 import { AuthView } from "./views/AuthView";
 import { LeagueAccessView } from "./views/LeagueAccessView";
@@ -153,10 +156,17 @@ export default function App() {
     );
   }, [selectedLeagueId]);
 
-  const allWeeklyScoresQuery = useMemo<Query | null>(() => {
-    if (!selectedLeagueId) return null;
-    return query(collection(db, "leagues", selectedLeagueId, "weeklyScores"));
+  const racePointsSummaryQuery = useMemo<Query | null>(() => {
+    if (!selectedLeagueId) {
+      return null;
+    }
+    return query(collection(db, "leagues", selectedLeagueId, "racePoints"));
   }, [selectedLeagueId]);
+
+  const allWeeklyScoresQuery = useMemo<Query | null>(() => {
+    if (!selectedLeagueId || tab !== "standings") return null;
+    return query(collection(db, "leagues", selectedLeagueId, "weeklyScores"));
+  }, [selectedLeagueId, tab]);
 
   const latestStandingsSnapshotQuery = useMemo<Query | null>(() => {
     if (!selectedLeagueId) return null;
@@ -167,17 +177,51 @@ export default function App() {
     );
   }, [selectedLeagueId]);
 
+  const notificationsQuery = useMemo<Query | null>(() => {
+    if (!user) return null;
+    return query(
+      collection(db, "users", user.uid, "notifications"),
+      orderBy("createdAt", "desc"),
+      limit(10),
+    );
+  }, [user?.uid]);
+
   const racesState = useFirestoreCollection<RaceDoc>(racesQuery);
   const driversState = useFirestoreCollection<DriverDoc>(driversQuery);
   const membersState = useFirestoreCollection<MemberDoc>(membersQuery);
   const seasonScoresState = useFirestoreCollection<SeasonScoreDoc>(seasonScoresQuery);
+  const racePointsSummaryState = useFirestoreCollection<RacePointsDoc>(racePointsSummaryQuery);
   const allWeeklyScoresState = useFirestoreCollection<WeeklyScoreDoc>(allWeeklyScoresQuery);
   const latestStandingsState = useFirestoreCollection<StandingsSnapshotDoc>(latestStandingsSnapshotQuery);
+  const notificationsState = useFirestoreCollection<UserNotificationDoc>(notificationsQuery);
+  const unreadNotifications = useMemo(
+    () => notificationsState.data.filter((item) => !item.readAt),
+    [notificationsState.data],
+  );
 
   const races = useMemo(
     () => [...racesState.data].sort((a, b) => a.startTime.toMillis() - b.startTime.toMillis()),
     [racesState.data],
   );
+  const latestRaceWithDriverDataId = useMemo(() => {
+    if (races.length === 0) return null;
+
+    const raceIdsWithDriverData = new Set(
+      racePointsSummaryState.data
+        .filter((racePoints) => {
+          const hasDrivers = Array.isArray(racePoints.drivers) && racePoints.drivers.length > 0;
+          const hasOfficialResults =
+            Array.isArray(racePoints.officialResults) && racePoints.officialResults.length > 0;
+          return hasDrivers || hasOfficialResults;
+        })
+        .map((racePoints) => racePoints.id),
+    );
+
+    const latestRaceWithData = [...races].reverse().find((race) =>
+      raceIdsWithDriverData.has(race.id),
+    );
+    return latestRaceWithData?.id ?? null;
+  }, [races, racePointsSummaryState.data]);
 
   const {
     upcomingRace,
@@ -190,8 +234,36 @@ export default function App() {
     selectedRace,
     canReadAllPicksForSelectedRace,
   } = useRaceSelection(races, isAdmin);
+
+  const [hasUserSelectedRace, setHasUserSelectedRace] = useState(false);
+  const setSelectedRaceFromUser = (value: string | null) => {
+    setHasUserSelectedRace(true);
+    setSelectedRaceId(value);
+  };
+
+  useEffect(() => {
+    setHasUserSelectedRace(false);
+  }, [selectedLeagueId]);
+
+  useEffect(() => {
+    if (hasUserSelectedRace) return;
+    const preferredRaceId = latestRaceWithDriverDataId ?? latestCompletedRace?.id ?? null;
+    if (!preferredRaceId) return;
+    if (selectedRaceId !== preferredRaceId) {
+      setSelectedRaceId(preferredRaceId);
+    }
+  }, [
+    hasUserSelectedRace,
+    latestCompletedRace?.id,
+    latestRaceWithDriverDataId,
+    selectedRaceId,
+    setSelectedRaceId,
+  ]);
+
   const selectedRaceTierState = useFirestoreDocument<TierDoc>(
-    selectedLeagueId && selectedRaceId ? tierDocRef(selectedLeagueId, selectedRaceId) : null,
+    tab === "race" && selectedLeagueId && selectedRaceId
+      ? tierDocRef(selectedLeagueId, selectedRaceId)
+      : null,
   );
 
   const tierState = useFirestoreDocument<TierDoc>(
@@ -217,8 +289,9 @@ export default function App() {
   const effectiveTiers = tierState.data ?? tiersFromStandingsSnapshot;
   const selectedRaceEffectiveTiers = useMemo((): TierDoc | null => {
     if (selectedRaceTierState.data) return selectedRaceTierState.data;
-    return effectiveTiers;
-  }, [selectedRaceTierState.data, effectiveTiers]);
+    // Do not reuse the current race tiers for arbitrary historical/future race views.
+    return null;
+  }, [selectedRaceTierState.data]);
 
   const pickState = useFirestoreDocument<PickDoc>(
     selectedLeagueId && primaryRace && user
@@ -227,19 +300,19 @@ export default function App() {
   );
 
   const selectedRacePickState = useFirestoreDocument<PickDoc>(
-    selectedLeagueId && selectedRaceId && user
+    tab === "race" && selectedLeagueId && selectedRaceId && user
       ? pickDocRef(selectedLeagueId, selectedRaceId, user.uid)
       : null,
   );
 
   const selectedRacePointsState = useFirestoreDocument<RacePointsDoc>(
-    selectedLeagueId && selectedRaceId
+    tab === "race" && selectedLeagueId && selectedRaceId
       ? racePointsDocRef(selectedLeagueId, selectedRaceId)
       : null,
   );
 
   const selectedRaceScoreState = useFirestoreDocument<WeeklyScoreDoc>(
-    selectedLeagueId && selectedRaceId && user
+    tab === "race" && selectedLeagueId && selectedRaceId && user
       ? weeklyScoreDocRef(selectedLeagueId, selectedRaceId, user.uid)
       : null,
   );
@@ -248,35 +321,49 @@ export default function App() {
     selectedLeagueId && effectiveLiveRace ? racePointsDocRef(selectedLeagueId, effectiveLiveRace.id) : null,
   );
 
-  /** Primary race's points (so we can show live section when that race has nascar-live data even if not yet "locked"). */
+  /** Primary race's points doc. */
   const primaryRacePointsState = useFirestoreDocument<RacePointsDoc>(
     selectedLeagueId && primaryRace ? racePointsDocRef(selectedLeagueId, primaryRace.id) : null,
   );
 
-  /** Race we treat as live for UI: locked/past-lock race, or primary race when it has live data from NASCAR. */
-  const liveRaceForDisplay = useMemo(() => {
-    if (effectiveLiveRace) return effectiveLiveRace;
-    if (primaryRace && primaryRacePointsState.data?.source === "nascar-live") return primaryRace;
-    return null;
-  }, [effectiveLiveRace, primaryRace, primaryRacePointsState.data?.source]);
+  /** Race we treat as live for UI: locked or past-lock race only. */
+  const liveRaceForDisplay = useMemo(() => effectiveLiveRace, [effectiveLiveRace]);
 
-  /** Live race points to show: from the race we're treating as live (may be primary when it has nascar-live data). */
+  /** Live race points to show for the race currently treated as live. */
   const liveRacePointsForDisplay = useMemo(() => {
-    if (liveRaceForDisplay?.id === effectiveLiveRace?.id) return liveRacePointsState.data;
-    if (liveRaceForDisplay?.id === primaryRace?.id) return primaryRacePointsState.data;
-    return null;
-  }, [liveRaceForDisplay?.id, effectiveLiveRace?.id, primaryRace?.id, liveRacePointsState.data, primaryRacePointsState.data]);
+    if (!liveRaceForDisplay) return null;
+    return liveRacePointsState.data;
+  }, [liveRaceForDisplay, liveRacePointsState.data]);
 
-  const liveWeeklyScores = useMemo(() => {
-    if (!liveRaceForDisplay) return [];
-    return [...allWeeklyScoresState.data]
-      .filter((s) => s.raceId === liveRaceForDisplay.id)
-      .sort((a, b) => b.weeklyTotal - a.weeklyTotal);
-  }, [liveRaceForDisplay?.id, allWeeklyScoresState.data]);
-  const selectedRaceWeeklyScores = useMemo(() => {
-    if (!selectedRaceId) return [];
-    return allWeeklyScoresState.data.filter((s) => s.raceId === selectedRaceId);
-  }, [allWeeklyScoresState.data, selectedRaceId]);
+  const liveWeeklyScoresQuery = useMemo<Query | null>(() => {
+    if (tab !== "home" || !selectedLeagueId || !liveRaceForDisplay) return null;
+    return query(
+      collection(db, "leagues", selectedLeagueId, "weeklyScores"),
+      where("raceId", "==", liveRaceForDisplay.id),
+      orderBy("weeklyTotal", "desc"),
+    );
+  }, [liveRaceForDisplay?.id, selectedLeagueId, tab]);
+  const liveWeeklyScoresState = useFirestoreCollection<WeeklyScoreDoc>(liveWeeklyScoresQuery);
+  const liveWeeklyScores = useMemo(
+    () => liveWeeklyScoresState.data,
+    [liveWeeklyScoresState.data],
+  );
+
+  const selectedRaceWeeklyScoresQuery = useMemo<Query | null>(() => {
+    if (tab !== "race" || !selectedLeagueId || !selectedRaceId) return null;
+    return query(
+      collection(db, "leagues", selectedLeagueId, "weeklyScores"),
+      where("raceId", "==", selectedRaceId),
+      orderBy("weeklyTotal", "desc"),
+    );
+  }, [selectedLeagueId, selectedRaceId, tab]);
+  const selectedRaceWeeklyScoresState = useFirestoreCollection<WeeklyScoreDoc>(
+    selectedRaceWeeklyScoresQuery,
+  );
+  const selectedRaceWeeklyScores = useMemo(
+    () => selectedRaceWeeklyScoresState.data,
+    [selectedRaceWeeklyScoresState.data],
+  );
   const driversById = useMemo(() => toDriversMap(driversState.data), [driversState.data]);
   const memberById = useMemo(
     () =>
@@ -311,8 +398,14 @@ export default function App() {
     () => mapOfficialResultsToDriverPoints(primaryRaceOfficialResults, driversById),
     [primaryRaceOfficialResults, driversById],
   );
+  const primaryRaceLockMs = primaryRace?.lockTime?.toMillis?.() ?? Number.POSITIVE_INFINITY;
+  const primaryRaceHasLockedOrStarted = useMemo(() => {
+    if (!primaryRace) return false;
+    if (primaryRace.status === "locked" || primaryRace.status === "completed") return true;
+    return primaryRaceLockMs <= Date.now();
+  }, [primaryRace?.id, primaryRace?.status, primaryRaceLockMs]);
   const primaryRaceAdjustmentsQuery = useMemo<Query | null>(() => {
-    if (!selectedLeagueId || !primaryRace) {
+    if (!selectedLeagueId || !primaryRace || !primaryRaceHasLockedOrStarted) {
       return null;
     }
 
@@ -320,12 +413,13 @@ export default function App() {
       collection(db, "leagues", selectedLeagueId, "adjustments"),
       where("raceId", "==", primaryRace.id),
     );
-  }, [selectedLeagueId, primaryRace?.id]);
+  }, [selectedLeagueId, primaryRace?.id, primaryRaceHasLockedOrStarted]);
   const primaryRaceAdjustmentsState = useFirestoreCollection<{
     driverId: string;
     deltaPoints: number;
   }>(primaryRaceAdjustmentsQuery);
   const primaryRaceDriverPointsByDriverId = useMemo(() => {
+    if (!primaryRaceHasLockedOrStarted) return {};
     const map = buildDriverPointsByDriverId(primaryRacePointDrivers, driversById);
     for (const [driverId, points] of Object.entries(primaryRaceOfficialPointsByDriverId)) {
       if (map[driverId] == null) {
@@ -338,6 +432,8 @@ export default function App() {
     }
     return map;
   }, [
+    driversById,
+    primaryRaceHasLockedOrStarted,
     primaryRaceAdjustmentsState.data,
     primaryRaceOfficialPointsByDriverId,
     primaryRacePointDrivers,
@@ -348,9 +444,33 @@ export default function App() {
   const [isWeeklyExpanded, setIsWeeklyExpanded] = useState(false);
   const [isMonthlyExpanded, setIsMonthlyExpanded] = useState(false);
   const [isSeasonExpanded, setIsSeasonExpanded] = useState(false);
+  const [monitorRaceId, setMonitorRaceId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setMonitorRaceId(null);
+  }, [selectedLeagueId]);
+
+  useEffect(() => {
+    const defaultRaceId = primaryRace?.id ?? latestCompletedRace?.id ?? upcomingRace?.id ?? null;
+    if (!monitorRaceId) {
+      setMonitorRaceId(defaultRaceId);
+      return;
+    }
+
+    const raceExists = races.some((race) => race.id === monitorRaceId);
+    if (!raceExists) {
+      setMonitorRaceId(defaultRaceId);
+    }
+  }, [
+    latestCompletedRace?.id,
+    monitorRaceId,
+    primaryRace?.id,
+    races,
+    upcomingRace?.id,
+  ]);
 
   const selectedRaceAdjustmentsQuery = useMemo<Query | null>(() => {
-    if (!selectedLeagueId || !selectedRaceId) {
+    if (tab !== "race" || !selectedLeagueId || !selectedRaceId) {
       return null;
     }
 
@@ -358,7 +478,7 @@ export default function App() {
       collection(db, "leagues", selectedLeagueId, "adjustments"),
       where("raceId", "==", selectedRaceId),
     );
-  }, [selectedLeagueId, selectedRaceId]);
+  }, [selectedLeagueId, selectedRaceId, tab]);
 
   const selectedRaceAdjustmentsState = useFirestoreCollection<{
     driverId: string;
@@ -367,7 +487,12 @@ export default function App() {
     type: "penalty" | "correction";
   }>(selectedRaceAdjustmentsQuery);
   const selectedRacePicksQuery = useMemo<Query | null>(() => {
-    if (!selectedLeagueId || !selectedRace || !canReadAllPicksForSelectedRace) {
+    if (
+      tab !== "race" ||
+      !selectedLeagueId ||
+      !selectedRace ||
+      !canReadAllPicksForSelectedRace
+    ) {
       return null;
     }
 
@@ -375,12 +500,11 @@ export default function App() {
       collection(db, "leagues", selectedLeagueId, "picks"),
       where("raceId", "==", selectedRace.id),
     );
-  }, [selectedLeagueId, selectedRace?.id, canReadAllPicksForSelectedRace]);
+  }, [selectedLeagueId, selectedRace?.id, canReadAllPicksForSelectedRace, tab]);
   const selectedRacePicksState = useFirestoreCollection<PickDoc>(selectedRacePicksQuery);
 
-  const monitorRaceId = selectedRaceId ?? primaryRace?.id ?? null;
   const raceMonitorQuery = useMemo<Query | null>(() => {
-    if (!selectedLeagueId || !monitorRaceId) {
+    if (!selectedLeagueId || !monitorRaceId || !isAdmin || tab !== "admin") {
       return null;
     }
 
@@ -389,14 +513,16 @@ export default function App() {
       where("raceId", "==", monitorRaceId),
       orderBy("updatedAt", "desc"),
     );
-  }, [selectedLeagueId, monitorRaceId]);
+  }, [isAdmin, selectedLeagueId, monitorRaceId, tab]);
 
   const raceMonitorPicksState = useFirestoreCollection<PickDoc>(raceMonitorQuery);
   const monitorRacePointsState = useFirestoreDocument<RacePointsDoc>(
-    selectedLeagueId && monitorRaceId ? racePointsDocRef(selectedLeagueId, monitorRaceId) : null,
+    selectedLeagueId && isAdmin && tab === "admin" && monitorRaceId
+      ? racePointsDocRef(selectedLeagueId, monitorRaceId)
+      : null,
   );
   const monitorRaceAdjustmentsQuery = useMemo<Query | null>(() => {
-    if (!selectedLeagueId || !monitorRaceId) {
+    if (!selectedLeagueId || !isAdmin || tab !== "admin" || !monitorRaceId) {
       return null;
     }
 
@@ -404,7 +530,7 @@ export default function App() {
       collection(db, "leagues", selectedLeagueId, "adjustments"),
       where("raceId", "==", monitorRaceId),
     );
-  }, [selectedLeagueId, monitorRaceId]);
+  }, [isAdmin, monitorRaceId, selectedLeagueId, tab]);
   const monitorRaceAdjustmentsState = useFirestoreCollection<{
     driverId: string;
     deltaPoints: number;
@@ -419,7 +545,7 @@ export default function App() {
   );
   const monitorRaceOfficialPointsByDriverId = useMemo(
     () => mapOfficialResultsToDriverPoints(monitorRaceOfficialResults, driversById),
-    [monitorRaceOfficialResults, driversById],
+    [driversById, monitorRaceOfficialResults],
   );
   const monitorRaceDriverPointsByDriverId = useMemo(() => {
     const map = buildDriverPointsByDriverId(monitorRacePointDrivers, driversById);
@@ -434,88 +560,38 @@ export default function App() {
     }
     return map;
   }, [
+    driversById,
     monitorRaceAdjustmentsState.data,
     monitorRaceOfficialPointsByDriverId,
     monitorRacePointDrivers,
   ]);
-
-  type StandingsRow = { id: string; displayName: string; seasonTotal: number; rank: number };
-  const mergedStandingsRows = useMemo((): StandingsRow[] => {
-    const scoreIds = new Set(seasonScoresState.data.map((s) => s.id));
-    const rows: StandingsRow[] = seasonScoresState.data.map((score) => ({
-      id: score.id,
-      displayName: memberById[score.id]?.displayName ?? score.id,
-      seasonTotal: score.seasonTotal,
-      rank: score.rank,
-    }));
-    // Include members who have no season score yet (e.g. new admin) so they always appear
-    membersState.data.forEach((member) => {
-      if (!scoreIds.has(member.id)) {
-        rows.push({
-          id: member.id,
-          displayName: member.displayName,
-          seasonTotal: 0,
-          rank: 0,
-        });
-      }
-    });
-    const sorted = [...rows].sort((a, b) => {
-      if (b.seasonTotal !== a.seasonTotal) return b.seasonTotal - a.seasonTotal;
-      return a.displayName.localeCompare(b.displayName);
-    });
-    return sorted.map((row, index) => ({ ...row, rank: index + 1 }));
-  }, [
-    seasonScoresState.data,
-    membersState.data,
-    memberById,
-  ]);
-
-  const currentRaceIdForWeekly = effectiveLiveRace?.id ?? latestCompletedRace?.id ?? upcomingRace?.id ?? null;
-  const effectiveWeeklyRaceId = selectedRaceIdForWeekly ?? currentRaceIdForWeekly;
-  const weeklyLeaderboardRows = useMemo((): { rank: number; userId: string; points: number }[] => {
-    if (!effectiveWeeklyRaceId) return [];
-    const byRace = allWeeklyScoresState.data.filter((s) => s.raceId === effectiveWeeklyRaceId);
-    const sorted = [...byRace].sort((a, b) => b.weeklyTotal - a.weeklyTotal);
-    return sorted.map((s, i) => ({ rank: i + 1, userId: s.userId, points: s.weeklyTotal }));
-  }, [allWeeklyScoresState.data, effectiveWeeklyRaceId]);
-
-  const raceIdToSprintIndex = useMemo((): Record<string, number> => {
+  const monitorRaceDriverPositionByDriverId = useMemo(() => {
     const map: Record<string, number> = {};
-    races.forEach((race) => {
-      const month = new Date(race.startTime.toMillis()).getMonth() + 1;
-      if (month >= 2 && month <= 8) map[race.id] = month - 1;
-    });
-    return map;
-  }, [races]);
-  const currentSprintIndex = useMemo(() => {
-    if (!latestCompletedRace) return 1;
-    return raceIdToSprintIndex[latestCompletedRace.id] ?? 1;
-  }, [latestCompletedRace?.id, raceIdToSprintIndex]);
-  const effectiveSprintIndex = selectedSprintIndex === 0 ? currentSprintIndex : selectedSprintIndex;
-  const sprintLeaderboardRows = useMemo((): { userId: string; total: number }[] => {
-    const config = SPRINT_CONFIGS.find((c) => c.index === effectiveSprintIndex) ?? SPRINT_CONFIGS[0];
-    const byUser: Record<string, number> = {};
-    allWeeklyScoresState.data.forEach((s) => {
-      const sprint = raceIdToSprintIndex[s.raceId];
-      if (sprint !== config.index) return;
-      byUser[s.userId] = (byUser[s.userId] ?? 0) + s.weeklyTotal;
-    });
-    return Object.entries(byUser)
-      .sort(([, a], [, b]) => b - a)
-      .map(([userId, total]) => ({ userId, total }));
-  }, [allWeeklyScoresState.data, effectiveSprintIndex, raceIdToSprintIndex]);
-
-  const weeklyRacePickerOptions = useMemo(() => {
-    const options: { id: string | null; label: string }[] = [];
-    if (currentRaceIdForWeekly) {
-      const race = races.find((r) => r.id === currentRaceIdForWeekly);
-      if (race) options.push({ id: null, label: `Current (${race.name})` });
+    for (const d of monitorRacePointDrivers) {
+      if (d.runningPosition != null) map[d.driverId] = d.runningPosition;
     }
-    races
-      .filter((r) => r.status === "completed")
-      .forEach((race) => options.push({ id: race.id, label: race.name }));
-    return options;
-  }, [races, currentRaceIdForWeekly]);
+    return map;
+  }, [monitorRacePointDrivers]);
+
+  const {
+    mergedStandingsRows,
+    weeklyLeaderboardRows,
+    sprintLeaderboardRows,
+    weeklyRacePickerOptions,
+    currentSprintIndex,
+  } = useStandingsData({
+    seasonScores: seasonScoresState.data,
+    members: membersState.data,
+    memberById,
+    allWeeklyScores: allWeeklyScoresState.data,
+    races,
+    effectiveLiveRaceId: effectiveLiveRace?.id ?? null,
+    latestCompletedRaceId: latestCompletedRace?.id ?? null,
+    upcomingRaceId: upcomingRace?.id ?? null,
+    selectedRaceIdForWeekly,
+    selectedSprintIndex,
+    sprintConfigs: SPRINT_CONFIGS,
+  });
 
   const {
     draftPick,
@@ -553,12 +629,6 @@ export default function App() {
   const [adminError, setAdminError] = useState<string | null>(null);
   const [adminBusy, setAdminBusy] = useState(false);
 
-  const [manualResultsRaceId, setManualResultsRaceId] = useState("");
-  const [manualResultsSource, setManualResultsSource] = useState("admin-manual");
-  const [manualResultsRows, setManualResultsRows] = useState<
-    Array<{ driverId: string; basePoints: number }>
-  >([{ driverId: "", basePoints: 0 }]);
-
   const [adjustmentDraft, setAdjustmentDraft] = useState({
     raceId: "",
     driverId: "",
@@ -569,6 +639,13 @@ export default function App() {
   });
 
   const [expandedPickUserId, setExpandedPickUserId] = useState<string | null>(null);
+
+  const markNotificationRead = async (notificationId: string) => {
+    if (!user) return;
+    await updateDoc(doc(db, "users", user.uid, "notifications", notificationId), {
+      readAt: new Date(),
+    });
+  };
 
   useEffect(() => {
     if (isAdmin || tab !== "admin") {
@@ -695,6 +772,8 @@ export default function App() {
               driversById={driversById}
               memberById={memberById}
               onOpenPicks={() => setTab("picks")}
+              notifications={unreadNotifications}
+              onMarkNotificationRead={(id) => void markNotificationRead(id)}
             />
           </div>
         ) : null}
@@ -755,7 +834,7 @@ export default function App() {
               races={races}
               selectedRace={selectedRace ?? null}
               selectedRaceId={selectedRaceId}
-              setSelectedRaceId={setSelectedRaceId}
+              setSelectedRaceId={setSelectedRaceFromUser}
               selectedRaceTiers={selectedRaceEffectiveTiers}
               selectedRaceScoreState={selectedRaceScoreState}
               selectedRacePickState={selectedRacePickState}
@@ -781,20 +860,16 @@ export default function App() {
               setAdminError={setAdminError}
               setAdminMessage={setAdminMessage}
               monitorRaceId={monitorRaceId}
+              setMonitorRaceId={setMonitorRaceId}
               raceMonitorPicksState={raceMonitorPicksState}
-              monitorRaceDriverPointsByDriverId={monitorRaceDriverPointsByDriverId}
               membersState={membersState}
               expandedPickUserId={expandedPickUserId}
               setExpandedPickUserId={setExpandedPickUserId}
               driversById={driversById}
               races={races}
-              manualResultsRaceId={manualResultsRaceId}
-              setManualResultsRaceId={setManualResultsRaceId}
-              manualResultsSource={manualResultsSource}
-              setManualResultsSource={setManualResultsSource}
-              manualResultsRows={manualResultsRows}
-              setManualResultsRows={setManualResultsRows}
               driversState={driversState}
+              driverPositionByDriverId={monitorRaceDriverPositionByDriverId}
+              driverPointsByDriverId={monitorRaceDriverPointsByDriverId}
               adjustmentDraft={adjustmentDraft}
               setAdjustmentDraft={setAdjustmentDraft}
               adminMessage={adminMessage}
@@ -811,8 +886,14 @@ export default function App() {
           leagueState.error,
           myMemberState.error,
           seasonScoresState.error,
+          racePointsSummaryState.error,
           allWeeklyScoresState.error,
+          liveWeeklyScoresState.error,
+          selectedRaceWeeklyScoresState.error,
+          selectedRacePicksState.error,
+          raceMonitorPicksState.error,
           tierState.error,
+          notificationsState.error,
         ].filter(Boolean) as string[];
         return errors.length > 0 ? (
           <footer className="error-footer">

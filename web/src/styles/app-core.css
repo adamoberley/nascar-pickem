@@ -369,10 +369,55 @@ textarea {
   top: 0;
   z-index: 10;
   margin: 0 -1rem 0;
+  padding-bottom: 1.4rem;
+  margin-bottom: -1.4rem;
   background: transparent !important;
   border: none !important;
   border-bottom: none !important;
   box-shadow: none !important;
+  isolation: isolate;
+}
+
+.app-header-strip::before {
+  content: "";
+  position: absolute;
+  top: -0.2rem;
+  bottom: -0.35rem;
+  left: 50%;
+  width: 100vw;
+  transform: translateX(-50%);
+  z-index: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--bg) 44%, transparent) 0%,
+      color-mix(in srgb, var(--bg) 34%, transparent) 36%,
+      color-mix(in srgb, var(--bg) 16%, transparent) 72%,
+      transparent 100%
+    );
+  /* Top-heavy mask: strongest blur at top of viewport, zero at strip bottom. */
+  -webkit-mask-image: linear-gradient(
+    180deg,
+    rgb(0 0 0 / 100%) 0%,
+    rgb(0 0 0 / 92%) 22%,
+    rgb(0 0 0 / 58%) 58%,
+    rgb(0 0 0 / 0%) 100%
+  );
+  mask-image: linear-gradient(
+    180deg,
+    rgb(0 0 0 / 100%) 0%,
+    rgb(0 0 0 / 92%) 22%,
+    rgb(0 0 0 / 58%) 58%,
+    rgb(0 0 0 / 0%) 100%
+  );
+  backdrop-filter: blur(14px) saturate(118%);
+  -webkit-backdrop-filter: blur(14px) saturate(118%);
+}
+
+.app-header-strip > * {
+  position: relative;
+  z-index: 1;
 }
 
 /* Header: NASCAR icon + page title + league menu (matches iOS HeaderView) */
@@ -446,6 +491,7 @@ textarea {
   color: var(--text);
   cursor: pointer;
   transition: background-color 0.2s ease;
+  box-shadow: none;
 }
 
 .app-header-menu-btn:hover {
@@ -455,7 +501,7 @@ textarea {
 .header-stripes-icon {
   width: 26px;
   height: 26px;
-  border-radius: 4px;
+  border-radius: 1px;
   overflow: hidden;
   display: flex;
   flex-direction: row;
@@ -1838,6 +1884,92 @@ tbody tr:hover {
 .race-total-value {
   font-size: 0.94rem;
   font-weight: 700;
+}
+
+.race-total--loading {
+  min-width: 92px;
+  justify-content: flex-end;
+}
+
+.race-loading-pill {
+  display: block;
+  width: 88px;
+  height: 18px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--line) 70%, transparent) 10%,
+    color-mix(in srgb, var(--panel-alt) 75%, var(--line)) 45%,
+    color-mix(in srgb, var(--line) 70%, transparent) 90%
+  );
+  background-size: 220% 100%;
+  animation: race-loading-shimmer 1.1s ease-in-out infinite;
+}
+
+.race-loading-state {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.race-loading-label {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.92rem;
+  color: var(--muted);
+  margin: 0;
+}
+
+.race-loading-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--line) 72%, transparent);
+  border-top-color: var(--nascar-red);
+  animation: race-loading-spin 0.75s linear infinite;
+}
+
+.race-loading-rows {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.race-loading-row {
+  height: 35px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--line) 72%, transparent) 10%,
+    color-mix(in srgb, var(--panel-alt) 78%, var(--line)) 45%,
+    color-mix(in srgb, var(--line) 72%, transparent) 90%
+  );
+  background-size: 220% 100%;
+  animation: race-loading-shimmer 1.2s ease-in-out infinite;
+}
+
+.race-loading-row--w100 { width: 100%; }
+.race-loading-row--w96 { width: 96%; }
+.race-loading-row--w94 { width: 94%; }
+.race-loading-row--w92 { width: 92%; }
+.race-loading-row--w90 { width: 90%; }
+.race-loading-row--w88 { width: 88%; }
+.race-loading-row--w86 { width: 86%; }
+.race-loading-row--w84 { width: 84%; }
+
+@keyframes race-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes race-loading-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
 }
 
 .race-breakdown-rows {

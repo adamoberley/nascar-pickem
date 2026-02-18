@@ -12,9 +12,12 @@
 import { logger } from "firebase-functions";
 
 const CUP_SERIES_ID = 1;
+const NASCAR_TIME_ZONE = "America/New_York";
 const LIVE_FEED_URL = "https://cf.nascar.com/live/feeds/live-feed.json";
 const RACE_LIST_BASIC_URL = (seasonYear: number) =>
   `https://cf.nascar.com/cacher/${seasonYear}/${CUP_SERIES_ID}/race_list_basic.json`;
+const RACING_INSIGHTS_POINTS_FEED_URL = (seasonYear: number) =>
+  `https://cf.nascar.com/data/cacher/production/${seasonYear}/${CUP_SERIES_ID}/racinginsights-points-feed.json`;
 const WEEKEND_FEED_URL = (seasonYear: number, raceId: number) =>
   `https://cf.nascar.com/cacher/${seasonYear}/${CUP_SERIES_ID}/${raceId}/weekend-feed.json`;
 
@@ -108,9 +111,23 @@ export interface NascarRaceListBasicEntry {
   race_id?: number;
   race_name?: string;
   race_date?: string;
+  date_scheduled?: string;
   race_type_id?: number;
   series_id?: number;
   track_name?: string;
+  television_broadcaster?: string;
+  actual_laps?: number;
+  scheduled_laps?: number;
+  playoff_round?: number;
+}
+
+/** NASCAR Cup points standings row from racinginsights-points-feed.json. */
+export interface NascarPointsStandingsEntry {
+  position?: number;
+  driver_name?: string;
+  driver_id?: number;
+  car_no?: string;
+  manufacturer?: string;
 }
 
 interface ResolveNascarRaceIdInput {
@@ -225,10 +242,8 @@ function computeLivePoints(feed: NascarLiveFeed): FetchLiveFeedResult {
   };
 }
 
-/** Known NASCAR race_id by league race id. Use when live feed is unavailable so we can still fetch stage points. Add entries as season progresses. */
-const NASCAR_RACE_ID_BY_LEAGUE_RACE: Record<string, number> = {
-  "2026-daytona-500": 5596,
-};
+/** Optional manual NASCAR race_id overrides by league race id. Normally empty because race docs store nascarRaceId. */
+const NASCAR_RACE_ID_BY_LEAGUE_RACE: Record<string, number> = {};
 
 /** Return NASCAR race_id for a league race id if known; otherwise null. Lets us fetch stage points when the live feed is down. */
 export function getNascarRaceIdForLeagueRace(leagueRaceId: string): number | null {
@@ -256,6 +271,143 @@ export async function fetchNascarRaceListBasic(
     logger.warn("NASCAR race_list_basic fetch error", { url, error: String(err) });
     return [];
   }
+}
+
+/**
+ * Fetch NASCAR Cup points standings from racinginsights-points-feed.json.
+ * Used for weekly tier snapshots and driver roster updates.
+ */
+export async function fetchNascarCupPointsStandings(
+  seasonYear: number,
+): Promise<NascarPointsStandingsEntry[]> {
+  const url = RACING_INSIGHTS_POINTS_FEED_URL(seasonYear);
+  try {
+    const res = await fetch(url, { headers: LIVE_FEED_HEADERS });
+    if (!res.ok) {
+      logger.warn("NASCAR racinginsights points request failed", { url, status: res.status });
+      return [];
+    }
+    const data = (await res.json()) as unknown;
+    if (!Array.isArray(data)) return [];
+    return data as NascarPointsStandingsEntry[];
+  } catch (err) {
+    logger.warn("NASCAR racinginsights points fetch error", { url, error: String(err) });
+    return [];
+  }
+}
+
+function getZonedDateParts(
+  timestampMs: number,
+  timeZone: string,
+): { year: number; month: number; day: number; hour: number; minute: number; second: number } {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  const parts = formatter.formatToParts(new Date(timestampMs));
+  const get = (type: string) =>
+    Number(parts.find((part) => part.type === type)?.value ?? "0");
+  return {
+    year: get("year"),
+    month: get("month"),
+    day: get("day"),
+    hour: get("hour"),
+    minute: get("minute"),
+    second: get("second"),
+  };
+}
+
+function getTimeZoneOffsetMinutes(timestampMs: number, timeZone: string): number {
+  const parts = getZonedDateParts(timestampMs, timeZone);
+  const asUtcMs = Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second,
+  );
+  return (asUtcMs - timestampMs) / 60_000;
+}
+
+function zonedTimeToUtcMs(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+  second: number,
+  millisecond: number,
+  timeZone: string,
+): number {
+  const utcGuess = Date.UTC(year, month - 1, day, hour, minute, second, millisecond);
+  const firstOffset = getTimeZoneOffsetMinutes(utcGuess, timeZone);
+  let utcMs = utcGuess - firstOffset * 60_000;
+  const secondOffset = getTimeZoneOffsetMinutes(utcMs, timeZone);
+  if (secondOffset !== firstOffset) {
+    utcMs = utcGuess - secondOffset * 60_000;
+  }
+  return utcMs;
+}
+
+function parseNascarDateTimeInEastern(value: string): Date | null {
+  const match = value.match(
+    /^(\d{4})-(\d{2})-(\d{2})(?:[t\s](\d{2})(?::(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?)?)?$/i,
+  );
+  if (!match) return null;
+  const [, yearRaw, monthRaw, dayRaw, hourRaw, minuteRaw, secondRaw, millisecondRaw] =
+    match;
+
+  const year = Number(yearRaw);
+  const month = Number(monthRaw);
+  const day = Number(dayRaw);
+  const hour = Number(hourRaw ?? "0");
+  const minute = Number(minuteRaw ?? "0");
+  const second = Number(secondRaw ?? "0");
+  const millisecond = Number((millisecondRaw ?? "0").padEnd(3, "0"));
+  if ([year, month, day, hour, minute, second, millisecond].some((n) => !Number.isFinite(n))) {
+    return null;
+  }
+
+  const utcMs = zonedTimeToUtcMs(
+    year,
+    month,
+    day,
+    hour,
+    minute,
+    second,
+    millisecond,
+    NASCAR_TIME_ZONE,
+  );
+  const parsed = new Date(utcMs);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
+/**
+ * Parse a NASCAR date-time string that may omit timezone and normalize to a Date.
+ * NASCAR schedule feeds omit timezone; those values are Eastern Time.
+ */
+export function parseNascarDateTime(value: string | undefined | null): Date | null {
+  if (!value || typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  if (/(?:z|[+\-]\d{2}:?\d{2})$/i.test(trimmed)) {
+    const parsedWithZone = new Date(trimmed);
+    if (Number.isNaN(parsedWithZone.getTime())) return null;
+    return parsedWithZone;
+  }
+
+  const parsed = parseNascarDateTimeInEastern(trimmed);
+  if (!parsed) return null;
+  return parsed;
 }
 
 function toDateOnly(value: string | undefined | null): string | null {

@@ -12,6 +12,7 @@ final class SessionStore: ObservableObject {
         handle = Auth.auth().addStateDidChangeListener { [weak self] _, user in
             self?.user = user
             self?.isLoading = false
+            PushNotificationCoordinator.shared.handleAuthStateChange(user: user)
         }
     }
 
@@ -42,6 +43,8 @@ final class SessionStore: ObservableObject {
     }
 
     func signOut() throws {
+        PushNotificationCoordinator.shared.handleWillSignOut()
         try Auth.auth().signOut()
+        PushNotificationCoordinator.shared.handleAuthStateChange(user: nil)
     }
 }

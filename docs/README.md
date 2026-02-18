@@ -7,7 +7,7 @@ Documentation for setup, deployment, admin workflow, and data integration.
 | Document | Description |
 |----------|-------------|
 | [setup-checklist.md](setup-checklist.md) | Full setup: Firebase project, env vars, build, deploy, and troubleshooting (e.g. IAM for Cloud Functions). |
-| [GETTING-FULLY-WORKING.md](GETTING-FULLY-WORKING.md) | Get a 2026 league from zero to playable using built-in schedule, standings, and Clash result (no external NASCAR provider). |
+| [GETTING-FULLY-WORKING.md](GETTING-FULLY-WORKING.md) | Get a 2026 league from zero to playable using direct NASCAR CF feeds (no external provider adapter). |
 
 **Hosting:** The web app is deployed to Firebase Hosting. Live URL: https://nascar-pick-em.web.app. Deploy with `npm run deploy`.
 
@@ -17,14 +17,14 @@ Documentation for setup, deployment, admin workflow, and data integration.
 |----------|-------------|
 | [admin-onboarding.md](admin-onboarding.md) | One-time setup and weekly admin workflow (picks monitor, refresh, overrides, penalties). |
 
-## Data & provider
+## Data
 
 | Document | Description |
 |----------|-------------|
-| [provider-adapter.md](provider-adapter.md) | NASCAR data provider contract: required methods and HTTP adapter endpoints (schedule, standings, results). |
-| [race-results-sources.md](race-results-sources.md) | Standings and race results (NASCAR.com, ESPN). Live feed (cf.nascar.com) and stage points; implementation in `functions/src/nascar-live.ts`. |
+| [provider-adapter.md](provider-adapter.md) | Deprecated provider-adapter note; current ingestion is NASCAR CF direct. |
+| [race-results-sources.md](race-results-sources.md) | NASCAR CF standings, schedule, completed-race, and live feeds used by the app. |
 
-**Key modules (functions):** `provider.ts` (data provider), `nascar-live.ts` (live feed + stage points), `live-sync.ts` (live sync orchestration), `driver-mapping.ts` (vehicle number → driver mapping), `pick-validation.ts` (tier validation).
+**Key modules (functions):** `nascar-live.ts` (NASCAR feed clients), `ingest.ts` (schedule/standings/results ingest), `live-sync.ts` (live sync orchestration), `driver-mapping.ts` (vehicle number → driver mapping), `pick-validation.ts` (tier validation).
 
 ## Firestore & indexes
 
@@ -42,4 +42,5 @@ Documentation for setup, deployment, admin workflow, and data integration.
 ## Project root
 
 - **[../README.md](../README.md)** — Project overview, repo layout, setup summary, and links to key docs.
+- **[../AGENTS.md](../AGENTS.md)** — AI/agent workflow: minimal file map, fast commands, gotchas.
 - **[../STYLEGUIDE.md](../STYLEGUIDE.md)** — UI and code style for web and iOS.

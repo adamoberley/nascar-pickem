@@ -15,15 +15,20 @@ export function useRaceSelection(
     );
   }, [races]);
 
-  const latestCompletedRace = useMemo(
-    () => [...races].reverse().find((race) => race.status === "completed"),
-    [races],
-  );
+  const latestCompletedRace = useMemo(() => {
+    const now = Date.now();
+    return [...races].reverse().find(
+      (race) => race.status === "completed" && race.startTime.toMillis() <= now,
+    );
+  }, [races]);
 
-  const liveRace = useMemo(
-    () => races.find((race) => race.status === "locked") ?? null,
-    [races],
-  );
+  const liveRace = useMemo(() => {
+    return (
+      races.find(
+        (race) => race.status === "locked" && race.lockTime.toMillis() <= Date.now(),
+      ) ?? null
+    );
+  }, [races]);
 
   const inProgressScheduledRace = useMemo(() => {
     const now = Date.now();
@@ -77,13 +82,12 @@ export function useRaceSelection(
     () => (selectedRaceId ? (races.find((r) => r.id === selectedRaceId) ?? null) : null),
     [races, selectedRaceId],
   );
-  const selectedRaceLockMs = selectedRace?.lockTime?.toMillis?.() ?? 0;
+  const selectedRaceStartMs = selectedRace?.startTime?.toMillis?.() ?? 0;
   const canReadAllPicksForSelectedRace = useMemo(() => {
     if (!selectedRace) return false;
-    if (isAdmin) return true;
-    if (selectedRace.status === "locked" || selectedRace.status === "completed") return true;
-    return selectedRaceLockMs > 0 && selectedRaceLockMs <= Date.now();
-  }, [isAdmin, selectedRace?.id, selectedRace?.status, selectedRaceLockMs]);
+    if (selectedRace.status === "completed") return true;
+    return selectedRaceStartMs > 0 && selectedRaceStartMs <= Date.now();
+  }, [selectedRace?.id, selectedRace?.status, selectedRaceStartMs]);
 
   return {
     upcomingRace,

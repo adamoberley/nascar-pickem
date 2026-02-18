@@ -53,6 +53,22 @@ export function leagueRef(leagueId: string) {
   return db.collection("leagues").doc(leagueId);
 }
 
+export function userRef(userId: string) {
+  return db.collection("users").doc(userId);
+}
+
+export function userNotificationsRef(userId: string) {
+  return userRef(userId).collection("notifications");
+}
+
+export function userDevicesRef(userId: string) {
+  return userRef(userId).collection("devices");
+}
+
+export function mailQueueRef() {
+  return db.collection("mail");
+}
+
 export function membersRef(leagueId: string) {
   return leagueRef(leagueId).collection("members");
 }

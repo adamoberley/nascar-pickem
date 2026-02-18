@@ -48,6 +48,7 @@ struct RaceItem: Identifiable {
     let startTime: Date
     let lockTime: Date
     let status: RaceStatus
+    let nascarRaceId: Int?
     let tvChannel: String?
 }
 
@@ -56,6 +57,7 @@ struct DriverItem: Identifiable {
     let name: String
     let number: String
     let team: String
+    let nascarDriverId: Int?
 }
 
 struct TierItem {
@@ -71,6 +73,7 @@ struct PickItem: Equatable {
     let tierB: [String]
     let tierC: [String]
     let lockedAt: Date?
+    let updatedAt: Date?
 }
 
 struct WeeklyScoreItem: Identifiable {
@@ -131,6 +134,20 @@ struct StandingsSnapshotItem {
 struct AdjustmentItem {
     let driverId: String
     let deltaPoints: Int
+}
+
+struct UserNotificationItem: Identifiable {
+    let id: String
+    let type: String
+    let leagueId: String
+    let raceId: String
+    let title: String
+    let message: String
+    let lockTime: Date?
+    let createdAt: Date?
+    let readAt: Date?
+
+    var isRead: Bool { readAt != nil }
 }
 
 /// A row in the merged standings (real members + member names not yet joined).

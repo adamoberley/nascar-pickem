@@ -28,7 +28,7 @@ The Standings tab includes a **sprint** (monthly segment) leaderboard. Races are
 
 ## What is Automatic
 
-- Picks lock at race start time
+- Picks lock at race start time (scheduled backend lock + frontend lock guard when lock time has passed)
 - Tier generation from latest standings snapshots
 - Weekly score recomputation
 - Season leaderboard updates
@@ -41,7 +41,7 @@ The Standings tab includes a **sprint** (monthly segment) leaderboard. Races are
 
 ## Manual Fallbacks
 
-- `Refresh Data Now` — Ingest schedule, standings, and results from provider.
+- `Refresh Data Now` — Ingest schedule, standings, and results from NASCAR CF feeds. Recomputes tiers for the next race only and removes stale tier docs for other races.
 - `Sync Live Race` — During an in-progress race, pull running order from NASCAR.com live feed.
 - `Manual Results / Override` — Override race points when automatic sync fails.
 - `Add Penalty / Correction` — Add adjustments; scores and ranks update automatically.

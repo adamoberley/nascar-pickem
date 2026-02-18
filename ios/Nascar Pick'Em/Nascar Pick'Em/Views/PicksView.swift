@@ -217,18 +217,6 @@ struct PicksView: View {
                 tierC.append(driverId)
             }
         }
-
-        tryAutoSave()
-    }
-
-    private func tryAutoSave() {
-        let allDrivers = tierA + tierB + tierC
-        guard Set(allDrivers).count == allDrivers.count,
-              tierA.count == 3, tierB.count == 2, tierC.count == 1 else {
-            return
-        }
-        viewModel.clearMessages()
-        viewModel.savePick(tierA: tierA, tierB: tierB, tierC: tierC)
     }
 
     private func applyCurrentPick() {

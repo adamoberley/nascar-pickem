@@ -1,7 +1,9 @@
 import { Timestamp } from "firebase-admin/firestore";
+import { getAuth } from "firebase-admin/auth";
+import { getMessaging } from "firebase-admin/messaging";
 import { logger } from "firebase-functions/v2";
-import { onDocumentWritten } from "firebase-functions/v2/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
+import type { CallableRequest } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
 import { setGlobalOptions } from "firebase-functions/v2/options";
 import {
@@ -9,34 +11,37 @@ import {
   db,
   getLeagueIds,
   leagueRef,
+  mailQueueRef,
   membersRef,
   nowTimestamp,
   picksRef,
   racePointsRef,
   racesRef,
   seasonScoresRef,
+  userDevicesRef,
+  userNotificationsRef,
 } from "./data";
 import { ingestScheduleAndStandings, refreshRecentRaceResults } from "./ingest";
 import {
-  fetchNascarLiveFeed,
-  runNameMatchesRace,
-} from "./nascar-live";
-import type { FetchLiveFeedResult } from "./nascar-live";
-import {
   applyNascarLiveFeedToLeague,
-  syncLiveRaceForLeagues,
 } from "./live-sync";
 import { rescoreRace } from "./scoring";
-import { computeTiersForRace, recomputeTiersForUpcomingRaces } from "./tiers";
+import { computeTiersForRace } from "./tiers";
 import type {
   AdjustmentType,
+  LeagueDoc,
   MemberDoc,
   PickDoc,
   RaceDoc,
   RaceDriverPoints,
   TierDoc,
+  UserNotificationDoc,
 } from "./types";
 import type {
+  GetLeaguePreviewByInviteCodeRequest,
+  GetLeaguePreviewByInviteCodeResponse,
+  RemovePushTokenRequest,
+  UpsertPushTokenRequest,
   UpdateLeagueSettingsRequest,
   UpdateMemberPaidStatusRequest,
 } from "../../shared/callables";
@@ -56,13 +61,19 @@ setGlobalOptions({
   timeoutSeconds: 120,
 });
 
-const BASE_LOCK_CHECK_SCHEDULE = "every 15 minutes";
-const RACE_HOUR_LOCK_CHECK_SCHEDULE = "every 1 minutes";
-const RACE_HOUR_LOOKAHEAD_MS = 60 * 60 * 1000;
-const RACE_HOUR_LOOKBACK_MS = 15 * 60 * 1000;
-const LIVE_FEED_MATCH_WINDOW_FUTURE_MS = 8 * 60 * 60 * 1000;
-const LIVE_FEED_MATCH_WINDOW_PAST_MS = 12 * 60 * 60 * 1000;
-const LIVE_FEED_PICK_GUARD_LOOKAHEAD_MS = 24 * 60 * 60 * 1000;
+const LOCK_CHECK_SCHEDULE = "every 30 minutes";
+const PICK_REMINDER_SCHEDULE = "0 13 * * SUN";
+const PICK_REMINDER_LOOKAHEAD_HOURS = 168;
+const ENABLE_PUSH_REMINDERS = process.env.ENABLE_PUSH_REMINDERS !== "0";
+const ENABLE_EMAIL_REMINDERS = process.env.ENABLE_EMAIL_REMINDERS === "1";
+const REMINDER_EMAIL_FROM = process.env.REMINDER_EMAIL_FROM?.trim() ?? "";
+
+type PickReminderBucket = "168h" | "72h" | "24h" | "12h" | "3h";
+
+type CachedDeviceToken = {
+  deviceId: string;
+  token: string;
+};
 
 async function assertMember(leagueId: string, userId: string): Promise<MemberDoc> {
   const memberSnap = await membersRef(leagueId).doc(userId).get();
@@ -70,37 +81,6 @@ async function assertMember(leagueId: string, userId: string): Promise<MemberDoc
     throw new HttpsError("permission-denied", "You are not a member of this league.");
   }
   return memberSnap.data() as MemberDoc;
-}
-
-function isLiveFeedRaceInProgress(feed: FetchLiveFeedResult): boolean {
-  return feed.lapNumber > 0 && feed.drivers.length > 0;
-}
-
-function getLeagueIdFromRacePath(path: string): string | null {
-  const segments = path.split("/");
-  if (segments.length !== 4) return null;
-  if (segments[0] !== "leagues" || segments[2] !== "races") return null;
-  return segments[1];
-}
-
-async function getLeagueIdsWithScheduledRaceLockWindow(
-  windowStartMs: number,
-  windowEndMs: number,
-): Promise<string[]> {
-  const raceSnap = await db
-    .collectionGroup("races")
-    .where("lockTime", ">=", Timestamp.fromMillis(windowStartMs))
-    .where("lockTime", "<=", Timestamp.fromMillis(windowEndMs))
-    .get();
-
-  const leagueIds = new Set<string>();
-  raceSnap.forEach((raceDocSnap) => {
-    const race = raceDocSnap.data() as Partial<RaceDoc>;
-    if (race.status !== "scheduled") return;
-    const leagueId = getLeagueIdFromRacePath(raceDocSnap.ref.path);
-    if (leagueId) leagueIds.add(leagueId);
-  });
-  return Array.from(leagueIds);
 }
 
 async function lockRaceAndSubmittedPicks(
@@ -159,120 +139,329 @@ async function lockDueRacesForLeague(
   return raceSnap.size;
 }
 
-function findRaceToLockFromLiveFeed(
-  raceDocs: FirebaseFirestore.QueryDocumentSnapshot[],
-  liveFeed: FetchLiveFeedResult,
-): FirebaseFirestore.QueryDocumentSnapshot | null {
-  if (!isLiveFeedRaceInProgress(liveFeed)) return null;
-  const nowMs = Date.now();
-  const candidates = raceDocs
-    .map((raceDocSnap) => {
-      const race = raceDocSnap.data() as RaceDoc;
-      return {
-        raceDocSnap,
-        race,
-        startTimeMs: race.startTime.toMillis(),
-      };
-    })
-    .filter(
-      ({ startTimeMs }) =>
-        startTimeMs >= nowMs - LIVE_FEED_MATCH_WINDOW_PAST_MS &&
-        startTimeMs <= nowMs + LIVE_FEED_MATCH_WINDOW_FUTURE_MS,
-    );
-
-  if (candidates.length === 0) return null;
-
-  const matchesByName = candidates.filter(({ race }) =>
-    runNameMatchesRace(liveFeed.runName, race.name),
-  );
-  const pool =
-    matchesByName.length > 0
-      ? matchesByName
-      : candidates.length === 1
-        ? candidates
-        : [];
-  if (pool.length === 0) return null;
-
-  pool.sort(
-    (left, right) =>
-      Math.abs(left.startTimeMs - nowMs) - Math.abs(right.startTimeMs - nowMs) ||
-      left.startTimeMs - right.startTimeMs,
-  );
-  return pool[0].raceDocSnap;
+function getPickReminderBucket(hoursUntilLock: number): PickReminderBucket | null {
+  if (!Number.isFinite(hoursUntilLock) || hoursUntilLock <= 0) return null;
+  if (hoursUntilLock <= 3) return "3h";
+  if (hoursUntilLock <= 12) return "12h";
+  if (hoursUntilLock <= 24) return "24h";
+  if (hoursUntilLock <= 72) return "72h";
+  if (hoursUntilLock <= 168) return "168h";
+  return null;
 }
 
-async function lockRaceFromLiveFeedForLeague(
-  leagueId: string,
-  liveFeed: FetchLiveFeedResult,
-): Promise<number> {
-  const scheduledSnap = await racesRef(leagueId).where("status", "==", "scheduled").get();
-  if (scheduledSnap.empty) return 0;
-  const targetRaceDoc = findRaceToLockFromLiveFeed(scheduledSnap.docs, liveFeed);
-  if (!targetRaceDoc) return 0;
+function toReminderMessage(hoursUntilLock: number, raceName: string): string {
+  if (hoursUntilLock <= 3) {
+    return `Picks lock soon for ${raceName}. Confirm your picks now.`;
+  }
+  if (hoursUntilLock <= 12) {
+    return `Picks lock today for ${raceName}. Confirm your picks now.`;
+  }
+  if (hoursUntilLock <= 24) {
+    return `Reminder: confirm your picks for ${raceName}.`;
+  }
+  return `Weekly reminder: confirm your picks for ${raceName}.`;
+}
 
-  await lockRaceAndSubmittedPicks(leagueId, targetRaceDoc.id, "live-feed");
+function toReminderEmailBody(input: {
+  leagueName: string;
+  raceName: string;
+  lockTime: Timestamp;
+  message: string;
+}): string {
+  return [
+    `${input.message}`,
+    "",
+    `League: ${input.leagueName}`,
+    `Race: ${input.raceName}`,
+    `Lock time (UTC): ${input.lockTime.toDate().toISOString()}`,
+    "",
+    "Open NASCAR Pick'Em to submit your picks.",
+  ].join("\n");
+}
+
+function isInvalidMessagingTokenError(errorCode: string | undefined): boolean {
+  return (
+    errorCode === "messaging/registration-token-not-registered" ||
+    errorCode === "messaging/invalid-registration-token"
+  );
+}
+
+async function fetchUserDeviceTokens(
+  userId: string,
+  tokenCache: Map<string, CachedDeviceToken[]>,
+): Promise<CachedDeviceToken[]> {
+  const cached = tokenCache.get(userId);
+  if (cached) return cached;
+
+  const devicesSnap = await userDevicesRef(userId).get();
+  const tokens: CachedDeviceToken[] = devicesSnap.docs
+    .map((docSnap) => {
+      const token = (docSnap.data() as { token?: string }).token?.trim() ?? "";
+      if (!token) return null;
+      return { deviceId: docSnap.id, token };
+    })
+    .filter((entry): entry is CachedDeviceToken => entry !== null);
+
+  tokenCache.set(userId, tokens);
+  return tokens;
+}
+
+async function sendPushReminder(input: {
+  userId: string;
+  reminderDocId: string;
+  payload: UserNotificationDoc;
+  tokenCache: Map<string, CachedDeviceToken[]>;
+}): Promise<number> {
+  if (!ENABLE_PUSH_REMINDERS) return 0;
+
+  const deviceTokens = await fetchUserDeviceTokens(input.userId, input.tokenCache);
+  if (deviceTokens.length === 0) return 0;
+
+  const response = await getMessaging().sendEachForMulticast({
+    tokens: deviceTokens.map((entry) => entry.token),
+    notification: {
+      title: input.payload.title || "Picks due",
+      body: input.payload.message,
+    },
+    data: {
+      type: input.payload.type,
+      leagueId: input.payload.leagueId,
+      raceId: input.payload.raceId,
+      notificationId: input.reminderDocId,
+      lockTimeMs: String(input.payload.lockTime.toMillis()),
+    },
+    apns: {
+      payload: {
+        aps: {
+          sound: "default",
+        },
+      },
+    },
+  });
+
+  const invalidTokenDeletes: Promise<FirebaseFirestore.WriteResult>[] = [];
+  response.responses.forEach((result, index) => {
+    if (result.success) return;
+    if (!isInvalidMessagingTokenError(result.error?.code)) return;
+    invalidTokenDeletes.push(
+      userDevicesRef(input.userId).doc(deviceTokens[index].deviceId).delete(),
+    );
+  });
+  if (invalidTokenDeletes.length > 0) {
+    await Promise.all(invalidTokenDeletes);
+  }
+
+  return response.successCount;
+}
+
+async function fetchUserEmail(
+  userId: string,
+  emailCache: Map<string, string | null>,
+): Promise<string | null> {
+  const cached = emailCache.get(userId);
+  if (cached !== undefined) return cached;
+
+  let email: string | null = null;
+  try {
+    const authUser = await getAuth().getUser(userId);
+    const normalized = authUser.email?.trim().toLowerCase() ?? "";
+    email = normalized || null;
+  } catch (error) {
+    logger.warn("Unable to load auth user for reminder email", {
+      userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  emailCache.set(userId, email);
+  return email;
+}
+
+async function queueReminderEmail(input: {
+  userId: string;
+  leagueId: string;
+  raceId: string;
+  bucket: PickReminderBucket;
+  leagueName: string;
+  raceName: string;
+  payload: UserNotificationDoc;
+  emailCache: Map<string, string | null>;
+}): Promise<number> {
+  if (!ENABLE_EMAIL_REMINDERS) return 0;
+
+  const userEmail = await fetchUserEmail(input.userId, input.emailCache);
+  if (!userEmail) return 0;
+
+  const mailDocId = `pick-reminder_${input.userId}_${input.leagueId}_${input.raceId}_${input.bucket}`;
+  const mailRef = mailQueueRef().doc(mailDocId);
+  const existingMailSnap = await mailRef.get();
+  if (existingMailSnap.exists) return 0;
+
+  const subject = `${input.leagueName}: picks due for ${input.raceName}`;
+  const textBody = toReminderEmailBody({
+    leagueName: input.leagueName,
+    raceName: input.raceName,
+    lockTime: input.payload.lockTime,
+    message: input.payload.message,
+  });
+  const message: Record<string, unknown> = {
+    subject,
+    text: textBody,
+  };
+  if (REMINDER_EMAIL_FROM) {
+    message.from = REMINDER_EMAIL_FROM;
+  }
+
+  await mailRef.set({
+    to: [userEmail],
+    message,
+    meta: {
+      type: "pick_reminder",
+      userId: input.userId,
+      leagueId: input.leagueId,
+      raceId: input.raceId,
+      bucket: input.bucket,
+    },
+    createdAt: nowTimestamp(),
+  });
+
   return 1;
 }
 
-async function runLockCycle(options: {
-  source: string;
-  dueLockLeagueIds: string[];
-  liveFeed: FetchLiveFeedResult | null;
-  liveFeedLeagueIds?: string[];
-}): Promise<void> {
-  const scopeByLeague = new Map<string, { due: boolean; live: boolean }>();
+async function queueMissingPickRemindersForLeague(
+  leagueId: string,
+  now: Timestamp,
+): Promise<{ remindersCreated: number; racesChecked: number; pushSent: number; emailsQueued: number }> {
+  const nowMs = now.toMillis();
+  const lockHorizon = Timestamp.fromMillis(
+    nowMs + PICK_REMINDER_LOOKAHEAD_HOURS * 60 * 60 * 1000,
+  );
 
-  options.dueLockLeagueIds.forEach((leagueId) => {
-    const scope = scopeByLeague.get(leagueId) ?? { due: false, live: false };
-    scope.due = true;
-    scopeByLeague.set(leagueId, scope);
+  const racesSnap = await racesRef(leagueId)
+    .where("lockTime", "<=", lockHorizon)
+    .get();
+  const dueRaces = racesSnap.docs.filter((raceDocSnap) => {
+    const race = raceDocSnap.data() as RaceDoc;
+    if (race.status !== "scheduled") return false;
+    const lockMs = race.lockTime?.toMillis?.() ?? 0;
+    return lockMs > nowMs;
   });
 
-  if (options.liveFeed) {
-    const liveLeagueIds =
-      options.liveFeedLeagueIds && options.liveFeedLeagueIds.length > 0
-        ? options.liveFeedLeagueIds
-        : options.dueLockLeagueIds;
-    liveLeagueIds.forEach((leagueId) => {
-      const scope = scopeByLeague.get(leagueId) ?? { due: false, live: false };
-      scope.live = true;
-      scopeByLeague.set(leagueId, scope);
+  if (dueRaces.length === 0) {
+    return { remindersCreated: 0, racesChecked: 0, pushSent: 0, emailsQueued: 0 };
+  }
+
+  const leagueSnap = await leagueRef(leagueId).get();
+  const leagueName = leagueSnap.exists
+    ? ((leagueSnap.data() as { name?: string }).name ?? "Your league")
+    : "Your league";
+  const tokenCache = new Map<string, CachedDeviceToken[]>();
+  const emailCache = new Map<string, string | null>();
+
+  let remindersCreated = 0;
+  let pushSent = 0;
+  let emailsQueued = 0;
+  for (const raceDocSnap of dueRaces) {
+    const raceId = raceDocSnap.id;
+    const race = raceDocSnap.data() as RaceDoc;
+    const lockMs = race.lockTime.toMillis();
+    const hoursUntilLock = (lockMs - nowMs) / (60 * 60 * 1000);
+    const bucket = getPickReminderBucket(hoursUntilLock);
+    if (!bucket) continue;
+
+    const [membersSnap, picksSnap] = await Promise.all([
+      membersRef(leagueId).get(),
+      picksRef(leagueId).where("raceId", "==", raceId).get(),
+    ]);
+    const pickedUserIds = new Set<string>();
+    picksSnap.forEach((pickDocSnap) => {
+      const pick = pickDocSnap.data() as PickDoc;
+      pickedUserIds.add(pick.userId);
     });
-  }
 
-  if (scopeByLeague.size === 0) {
-    logger.info("Scheduled lock cycle skipped (no leagues in scope)", {
-      source: options.source,
+    const reminderWrites: Promise<void>[] = [];
+    membersSnap.forEach((memberDocSnap) => {
+      const userId = memberDocSnap.id;
+      if (pickedUserIds.has(userId)) return;
+
+      const reminderDocId = `pick-reminder_${leagueId}_${raceId}_${bucket}`;
+      const reminderRef = userNotificationsRef(userId).doc(reminderDocId);
+      reminderWrites.push(
+        reminderRef.get().then(async (reminderSnap) => {
+          if (reminderSnap.exists) return;
+          const payload: UserNotificationDoc = {
+            type: "pick_reminder",
+            leagueId,
+            raceId,
+            title: `${leagueName}: picks due`,
+            message: toReminderMessage(hoursUntilLock, race.name),
+            lockTime: race.lockTime,
+            createdAt: nowTimestamp(),
+          };
+          remindersCreated += 1;
+          await reminderRef.set(payload);
+          const [pushCount, emailCount] = await Promise.all([
+            sendPushReminder({
+              userId,
+              reminderDocId,
+              payload,
+              tokenCache,
+            }).catch((error) => {
+              logger.warn("sendPushReminder failed", {
+                userId,
+                leagueId,
+                raceId,
+                error: error instanceof Error ? error.message : String(error),
+              });
+              return 0;
+            }),
+            queueReminderEmail({
+              userId,
+              leagueId,
+              raceId,
+              bucket,
+              leagueName,
+              raceName: race.name,
+              payload,
+              emailCache,
+            }).catch((error) => {
+              logger.warn("queueReminderEmail failed", {
+                userId,
+                leagueId,
+                raceId,
+                error: error instanceof Error ? error.message : String(error),
+              });
+              return 0;
+            }),
+          ]);
+          pushSent += pushCount;
+          emailsQueued += emailCount;
+        }),
+      );
     });
-    return;
+    await Promise.all(reminderWrites);
   }
 
-  const now = nowTimestamp();
-  let lockedByTime = 0;
-  let lockedByLiveFeed = 0;
-  for (const [leagueId, scope] of scopeByLeague) {
-    if (scope.due) {
-      lockedByTime += await lockDueRacesForLeague(leagueId, now);
-    }
-    if (scope.live && options.liveFeed) {
-      lockedByLiveFeed += await lockRaceFromLiveFeedForLeague(leagueId, options.liveFeed);
-    }
-  }
-
-  logger.info("Scheduled lock cycle complete", {
-    source: options.source,
-    leaguesChecked: scopeByLeague.size,
-    dueLockLeagues: options.dueLockLeagueIds.length,
-    liveFeedLeagues: options.liveFeedLeagueIds?.length ?? 0,
-    lockedByTime,
-    lockedByLiveFeed,
-  });
+  return { remindersCreated, racesChecked: dueRaces.length, pushSent, emailsQueued };
 }
 
-function withHttpsErrorHandling<TResponse>(
+function normalizeDeviceId(input: string): string {
+  const normalized = toDocId(input);
+  if (normalized.length > 0) return normalized;
+  return toDocId(`${Date.now()}-${Math.random()}`);
+}
+
+function normalizePlatform(raw: string): "ios" | "web" {
+  const lower = raw.trim().toLowerCase();
+  if (lower !== "ios" && lower !== "web") {
+    throw new HttpsError("invalid-argument", "platform must be 'ios' or 'web'.");
+  }
+  return lower;
+}
+
+function withHttpsErrorHandling<TResponse, TData extends Record<string, unknown> = Record<string, unknown>>(
   callableName: string,
-  handler: (request: any) => Promise<TResponse>,
-): (request: any) => Promise<TResponse> {
+  handler: (request: CallableRequest<TData>) => Promise<TResponse>,
+): (request: CallableRequest<TData>) => Promise<TResponse> {
   return async (request) => {
     try {
       return await handler(request);
@@ -342,6 +531,17 @@ export const createLeague = onCall({ invoker: "public" }, withHttpsErrorHandling
   logger.info("Member document created with userId field", { leagueId: leagueDocRef.id, userId });
   logger.info("Member document created successfully");
 
+  const userEmail =
+    typeof request.auth?.token?.email === "string" ? request.auth.token.email.trim().toLowerCase() : "";
+  await db.collection("users").doc(userId).set(
+    {
+      displayName: adminDisplayName,
+      ...(userEmail ? { email: userEmail } : {}),
+      updatedAt: nowTimestamp(),
+    },
+    { merge: true },
+  );
+
   return {
     leagueId: leagueDocRef.id,
     inviteCode,
@@ -395,9 +595,12 @@ export const joinLeagueByInvite = onCall({ invoker: "public" }, withHttpsErrorHa
   }
 
   logger.info("Updating user document", { userId });
+  const userEmail =
+    typeof request.auth?.token?.email === "string" ? request.auth.token.email.trim().toLowerCase() : "";
   await db.collection("users").doc(userId).set(
     {
       displayName,
+      ...(userEmail ? { email: userEmail } : {}),
       updatedAt: nowTimestamp(),
     },
     { merge: true },
@@ -405,6 +608,108 @@ export const joinLeagueByInvite = onCall({ invoker: "public" }, withHttpsErrorHa
   logger.info("User document updated successfully");
 
   return { leagueId, displayName };
+}));
+
+export const getLeaguePreviewByInviteCode = onCall({ invoker: "public" }, withHttpsErrorHandling("getLeaguePreviewByInviteCode", async (request) => {
+  requireAuthUid(request.auth?.uid);
+  const data = (request.data ?? {}) as Partial<GetLeaguePreviewByInviteCodeRequest>;
+  const inviteCode = requireString(data.inviteCode, "inviteCode").toUpperCase();
+
+  const leagueSnap = await db
+    .collection("leagues")
+    .where("inviteCode", "==", inviteCode)
+    .limit(1)
+    .get();
+  if (leagueSnap.empty) {
+    throw new HttpsError("not-found", "Invite code not found.");
+  }
+
+  const leagueDoc = leagueSnap.docs[0];
+  const league = leagueDoc.data() as LeagueDoc;
+  let memberNames =
+    (Array.isArray(league.memberNames) ? league.memberNames : [])
+      .map((name) => String(name ?? "").trim())
+      .filter((name) => name.length > 0);
+
+  if (memberNames.length === 0) {
+    const membersSnap = await membersRef(leagueDoc.id).orderBy("displayName", "asc").get();
+    memberNames = membersSnap.docs
+      .map((memberDocSnap) => {
+        const member = memberDocSnap.data() as MemberDoc;
+        return String(member.displayName ?? "").trim();
+      })
+      .filter((name) => name.length > 0);
+  }
+
+  const response: GetLeaguePreviewByInviteCodeResponse = {
+    leagueId: leagueDoc.id,
+    name: league.name,
+    memberNames,
+  };
+  return response;
+}));
+
+export const upsertPushToken = onCall({ invoker: "public" }, withHttpsErrorHandling("upsertPushToken", async (request) => {
+  const userId = requireAuthUid(request.auth?.uid);
+  const data = (request.data ?? {}) as Partial<UpsertPushTokenRequest>;
+  const token = requireString(data.token, "token");
+  const platform = normalizePlatform(requireString(data.platform, "platform"));
+  const requestedDeviceId =
+    typeof data.deviceId === "string" && data.deviceId.trim().length > 0
+      ? data.deviceId
+      : token.slice(0, 80);
+  const deviceId = normalizeDeviceId(requestedDeviceId);
+  const now = nowTimestamp();
+
+  await userDevicesRef(userId).doc(deviceId).set(
+    {
+      token,
+      platform,
+      createdAt: now,
+      updatedAt: now,
+      lastSeenAt: now,
+    },
+    { merge: true },
+  );
+
+  return { ok: true, deviceId };
+}));
+
+export const removePushToken = onCall({ invoker: "public" }, withHttpsErrorHandling("removePushToken", async (request) => {
+  const userId = requireAuthUid(request.auth?.uid);
+  const data = (request.data ?? {}) as Partial<RemovePushTokenRequest>;
+  const token = requireString(data.token, "token");
+  const now = nowTimestamp();
+
+  if (typeof data.deviceId === "string" && data.deviceId.trim().length > 0) {
+    const deviceId = normalizeDeviceId(data.deviceId);
+    await userDevicesRef(userId).doc(deviceId).set(
+      {
+        token: "",
+        disabledAt: now,
+        updatedAt: now,
+      },
+      { merge: true },
+    );
+    return { ok: true };
+  }
+
+  const devicesSnap = await userDevicesRef(userId)
+    .where("token", "==", token)
+    .get();
+  const writes: Promise<FirebaseFirestore.WriteResult>[] = [];
+  devicesSnap.forEach((docSnap) => {
+    writes.push(docSnap.ref.set(
+      {
+        token: "",
+        disabledAt: now,
+        updatedAt: now,
+      },
+      { merge: true },
+    ));
+  });
+  await Promise.all(writes);
+  return { ok: true };
 }));
 
 export const savePick = onCall({ invoker: "public" }, withHttpsErrorHandling("savePick", async (request) => {
@@ -437,17 +742,6 @@ export const savePick = onCall({ invoker: "public" }, withHttpsErrorHandling("sa
   const nowMs = Date.now();
   if (race.status !== "scheduled" || race.lockTime.toMillis() <= nowMs) {
     throw new HttpsError("failed-precondition", "Picks are locked for this race.");
-  }
-  if (race.lockTime.toMillis() - nowMs <= LIVE_FEED_PICK_GUARD_LOOKAHEAD_MS) {
-    const liveFeed = await fetchNascarLiveFeed();
-    if (
-      liveFeed &&
-      isLiveFeedRaceInProgress(liveFeed) &&
-      runNameMatchesRace(liveFeed.runName, race.name)
-    ) {
-      await lockRaceAndSubmittedPicks(leagueId, raceId, "save-pick-live-feed-guard");
-      throw new HttpsError("failed-precondition", "Picks are locked for this race.");
-    }
   }
 
   const selection = {
@@ -634,78 +928,21 @@ export const addAdjustment = onCall({ invoker: "public" }, withHttpsErrorHandlin
 
 export const lockPicksAtRaceStart = onSchedule(
   {
-    schedule: BASE_LOCK_CHECK_SCHEDULE,
+    schedule: LOCK_CHECK_SCHEDULE,
     timeZone: "America/New_York",
     retryCount: 1,
   },
   async () => {
-    const [leagueIds, liveFeed] = await Promise.all([
-      getLeagueIds(),
-      fetchNascarLiveFeed(),
-    ]);
-
-    await runLockCycle({
-      source: "baseline",
-      dueLockLeagueIds: leagueIds,
-      liveFeed,
-      liveFeedLeagueIds: leagueIds,
-    });
-  },
-);
-
-export const lockPicksAtRaceStartRaceHour = onSchedule(
-  {
-    schedule: RACE_HOUR_LOCK_CHECK_SCHEDULE,
-    timeZone: "America/New_York",
-    retryCount: 1,
-  },
-  async () => {
-    const nowMs = Date.now();
-    const [dueLockLeagueIds, liveFeed] = await Promise.all([
-      getLeagueIdsWithScheduledRaceLockWindow(
-        nowMs - RACE_HOUR_LOOKBACK_MS,
-        nowMs + RACE_HOUR_LOOKAHEAD_MS,
-      ),
-      fetchNascarLiveFeed(),
-    ]);
-
-    let liveFeedLeagueIds: string[] = [];
-    if (liveFeed) {
-      liveFeedLeagueIds = await getLeagueIdsWithScheduledRaceLockWindow(
-        nowMs - LIVE_FEED_MATCH_WINDOW_PAST_MS,
-        nowMs + LIVE_FEED_MATCH_WINDOW_FUTURE_MS,
-      );
-      if (liveFeedLeagueIds.length === 0) {
-        liveFeedLeagueIds = await getLeagueIds();
-      }
-    }
-
-    await runLockCycle({
-      source: "race-hour",
-      dueLockLeagueIds,
-      liveFeed,
-      liveFeedLeagueIds,
-    });
-  },
-);
-
-/** Sync live race points from NASCAR.com live feed for any league with a race in progress. */
-export const syncLiveRaceFromNascar = onSchedule(
-  {
-    schedule: "every 2 minutes",
-    timeZone: "America/New_York",
-    retryCount: 1,
-  },
-  async () => {
-    const feed = await fetchNascarLiveFeed();
-    if (!feed) return;
-
     const leagueIds = await getLeagueIds();
-    await syncLiveRaceForLeagues(leagueIds, feed, 8);
-    logger.info("NASCAR live sync cycle complete", {
-      runName: feed.runName,
-      lapNumber: feed.lapNumber,
-      leagues: leagueIds.length,
+    const now = nowTimestamp();
+    let lockedByTime = 0;
+    for (const leagueId of leagueIds) {
+      lockedByTime += await lockDueRacesForLeague(leagueId, now);
+    }
+    logger.info("Scheduled lock cycle complete", {
+      source: "lock-check",
+      leaguesChecked: leagueIds.length,
+      lockedByTime,
     });
   },
 );
@@ -721,7 +958,7 @@ export const syncLiveRaceNow = onCall({ invoker: "public" }, withHttpsErrorHandl
 
 export const ingestLeagueDataDaily = onSchedule(
   {
-    schedule: "0 6 * * *",
+    schedule: "0 0 * * MON",
     timeZone: "America/New_York",
   },
   async () => {
@@ -735,22 +972,48 @@ export const ingestLeagueDataDaily = onSchedule(
 
 export const refreshRaceResults = onSchedule(
   {
-    schedule: "every 6 hours",
+    schedule: "15 0 * * MON",
     timeZone: "America/New_York",
   },
   async () => {
     const leagueIds = await getLeagueIds();
-    await Promise.all(leagueIds.map((leagueId) => refreshRecentRaceResults(leagueId, 5)));
+    await Promise.all(leagueIds.map((leagueId) => refreshRecentRaceResults(leagueId, 365)));
     logger.info("Race result refresh cycle complete", {
       leagues: leagueIds.length,
     });
   },
 );
 
-export const onStandingsSnapshotWrite = onDocumentWritten(
-  "leagues/{leagueId}/standingsSnapshots/{snapshotId}",
-  async (event) => {
-    const leagueId = event.params.leagueId;
-    await recomputeTiersForUpcomingRaces(leagueId);
+export const sendPickReminders = onSchedule(
+  {
+    schedule: PICK_REMINDER_SCHEDULE,
+    timeZone: "America/New_York",
+    retryCount: 1,
+  },
+  async () => {
+    const leagueIds = await getLeagueIds();
+    const now = nowTimestamp();
+    let remindersCreated = 0;
+    let racesChecked = 0;
+    let pushSent = 0;
+    let emailsQueued = 0;
+
+    for (const leagueId of leagueIds) {
+      const result = await queueMissingPickRemindersForLeague(leagueId, now);
+      remindersCreated += result.remindersCreated;
+      racesChecked += result.racesChecked;
+      pushSent += result.pushSent;
+      emailsQueued += result.emailsQueued;
+    }
+
+    logger.info("Pick reminder cycle complete", {
+      leaguesChecked: leagueIds.length,
+      racesChecked,
+      remindersCreated,
+      pushSent,
+      emailsQueued,
+      pushEnabled: ENABLE_PUSH_REMINDERS,
+      emailEnabled: ENABLE_EMAIL_REMINDERS,
+    });
   },
 );

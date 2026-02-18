@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  parseNascarDateTime,
   resolveNascarRaceIdForLeagueRace,
   runNameMatchesRace,
 } from "./nascar-live";
@@ -45,5 +46,22 @@ describe("resolveNascarRaceIdForLeagueRace", () => {
     });
 
     expect(raceId).toBe(202);
+  });
+});
+
+describe("parseNascarDateTime", () => {
+  it("parses timezone-less NASCAR values as Eastern (standard time)", () => {
+    const parsed = parseNascarDateTime("2026-02-22T15:00:00");
+    expect(parsed?.toISOString()).toBe("2026-02-22T20:00:00.000Z");
+  });
+
+  it("parses timezone-less NASCAR values as Eastern (daylight time)", () => {
+    const parsed = parseNascarDateTime("2026-07-12T15:00:00");
+    expect(parsed?.toISOString()).toBe("2026-07-12T19:00:00.000Z");
+  });
+
+  it("keeps explicit timezone values unchanged", () => {
+    const parsed = parseNascarDateTime("2026-02-22T20:00:00Z");
+    expect(parsed?.toISOString()).toBe("2026-02-22T20:00:00.000Z");
   });
 });
