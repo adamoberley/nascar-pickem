@@ -161,6 +161,41 @@ npm run test:e2e
 
 E2E tests require a deployed app or local dev server. See `web/tests/` and `web/playwright.config.ts`.
 
+## Single-League Beta Preflight
+
+Use this before inviting real players to the 2026 beta league:
+
+1. Quality gates:
+   ```bash
+   npm run lint
+   npm run test
+   npm run build --workspaces
+   ```
+2. Deploy backend + web:
+   ```bash
+   npm run deploy
+   ```
+3. Create one league from web admin and copy its invite code.
+4. Run one full player flow with a non-admin account:
+   - sign in
+   - join league by invite code
+   - submit picks for the next unlocked race
+5. Run one admin flow:
+   - refresh data
+   - open pick monitoring
+   - toggle one member paid status
+6. Confirm iOS client flows against the same league:
+   - league preview by invite code
+   - join league
+   - picks load/save
+7. Optional E2E smoke check:
+   ```bash
+   E2E_EMAIL=you@example.com \
+   E2E_PASSWORD=secret \
+   E2E_INVITE_CODE=RACER-2026 \
+   npm run test:e2e
+   ```
+
 ## Setup and Deploy
 
 Detailed steps: [docs/setup-checklist.md](docs/setup-checklist.md). Quick path:
