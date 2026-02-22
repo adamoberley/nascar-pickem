@@ -20,10 +20,12 @@ final class PlayerViewModel: ObservableObject {
 
     @Published var selectedRaceId: String?
     @Published var selectedRacePoints: [(String, Int)] = []
+    @Published var selectedRacePointsDocument: RacePointsDocument = .empty
     @Published var selectedRaceAdjustments: [AdjustmentItem] = []
     @Published var selectedRaceScore: WeeklyScoreItem?
     @Published var selectedRacePick: PickItem?
     @Published var selectedRacePicks: [PickItem] = []
+    @Published var liveRacePicks: [PickItem] = []
 
     @Published var liveRacePointsDocument: RacePointsDocument = .empty
     @Published var latestStandingsSnapshot: StandingsSnapshotItem?
@@ -48,6 +50,8 @@ final class PlayerViewModel: ObservableObject {
     private var selectedRacePickListener: ListenerRegistration?
     private var selectedRacePicksListener: ListenerRegistration?
     private var liveRacePointsListener: ListenerRegistration?
+    private var liveRacePicksListener: ListenerRegistration?
+    private var liveRacePicksUnlockTimer: Timer?
     private var standingsSnapshotListener: ListenerRegistration?
     private var adjustmentsListener: ListenerRegistration?
     private var notificationsListener: ListenerRegistration?
@@ -134,6 +138,17 @@ final class PlayerViewModel: ObservableObject {
         tier ?? tiersFromStandingsSnapshot
     }
 
+    /// Selected race driver position map (finish position first, otherwise running position).
+    var selectedRacePositionByDriverId: [String: Int] {
+        var map: [String: Int] = [:]
+        for d in selectedRacePointsDocument.drivers {
+            if let pos = d.finishPosition ?? d.runningPosition {
+                map[d.driverId] = pos
+            }
+        }
+        return map
+    }
+
     /// Selected race results with adjustments applied (driverId -> final points).
     var selectedRacePointsWithAdjustments: [(String, Int)] {
         let adjByDriver = Dictionary(selectedRaceAdjustments.map { ($0.driverId, $0.deltaPoints) }, uniquingKeysWith: +)
@@ -172,11 +187,29 @@ final class PlayerViewModel: ObservableObject {
         return race.startTime <= Date()
     }
 
+    var canSeeAllLiveRacePicks: Bool {
+        guard let race = effectiveLiveRace else { return false }
+        if race.status == .completed { return true }
+        return race.startTime <= Date()
+    }
+
     var selectedRaceWeeklyScores: [WeeklyScoreItem] {
         guard let raceId = selectedRaceId else { return [] }
         return allWeeklyScores
             .filter { $0.raceId == raceId }
             .sorted { $0.weeklyTotal > $1.weeklyTotal }
+    }
+
+    /// Driver points map for the currently live race.
+    var liveRacePointsByDriverId: [String: Int] {
+        var map = Dictionary(uniqueKeysWithValues: liveRacePointsDocument.drivers.map { ($0.driverId, $0.basePoints) })
+        // Fallback for drivers not present in live feed yet.
+        for score in liveWeeklyScores {
+            for item in score.breakdown where map[item.driverId] == nil {
+                map[item.driverId] = item.finalPointsApplied
+            }
+        }
+        return map
     }
 
     var isPickLocked: Bool {
@@ -244,6 +277,7 @@ final class PlayerViewModel: ObservableObject {
             self.observeTierAndPick()
             self.observeSelectedRaceDetails()
             self.observeLiveRacePoints()
+            self.observeLiveRacePicks()
             self.observeStandingsSnapshot()
         })
 
@@ -266,6 +300,7 @@ final class PlayerViewModel: ObservableObject {
         observeTierAndPick()
         observeSelectedRaceDetails()
         observeLiveRacePoints()
+        observeLiveRacePicks()
         observeStandingsSnapshot()
         observeNotifications()
     }
@@ -377,7 +412,7 @@ final class PlayerViewModel: ObservableObject {
         repository.runManualRefresh(leagueId: leagueId, completion: completion)
     }
 
-    func syncLiveRaceNow(completion: @escaping (Result<String, Error>) -> Void) {
+    func syncLiveRaceNow(completion: @escaping (Result<LiveRaceSyncResult, Error>) -> Void) {
         guard let leagueId = selectedLeague?.id else {
             completion(.failure(NSError(domain: "PlayerViewModel", code: -1, userInfo: [NSLocalizedDescriptionKey: "No league selected"])))
             return
@@ -496,6 +531,40 @@ final class PlayerViewModel: ObservableObject {
         }
     }
 
+    private func observeLiveRacePicks() {
+        liveRacePicksListener?.remove()
+        liveRacePicksListener = nil
+        liveRacePicksUnlockTimer?.invalidate()
+        liveRacePicksUnlockTimer = nil
+        guard let leagueId = selectedLeague?.id,
+              let race = effectiveLiveRace else {
+            liveRacePicks = []
+            return
+        }
+        let raceId = race.id
+        guard canSeeAllLiveRacePicks else {
+            liveRacePicks = []
+            let unlockDelay = race.startTime.timeIntervalSinceNow
+            if unlockDelay > 0 {
+                liveRacePicksUnlockTimer = Timer.scheduledTimer(
+                    withTimeInterval: unlockDelay + 0.5,
+                    repeats: false
+                ) { [weak self] _ in
+                    Task { @MainActor [weak self] in
+                        guard let self else { return }
+                        self.liveRacePicksUnlockTimer = nil
+                        self.observeLiveRacePicks()
+                    }
+                }
+                liveRacePicksUnlockTimer?.tolerance = 1
+            }
+            return
+        }
+        liveRacePicksListener = repository.observeRacePicks(leagueId: leagueId, raceId: raceId) { [weak self] picks in
+            self?.liveRacePicks = picks
+        }
+    }
+
     private func observeStandingsSnapshot() {
         standingsSnapshotListener?.remove()
         standingsSnapshotListener = nil
@@ -523,14 +592,19 @@ final class PlayerViewModel: ObservableObject {
         guard let leagueId = selectedLeague?.id,
               let raceId = selectedRaceId,
               let userId = currentUserId else {
+            selectedRacePoints = []
+            selectedRacePointsDocument = .empty
             selectedRacePick = nil
             selectedRaceAdjustments = []
             selectedRacePicks = []
             return
         }
 
-        racePointsListener = repository.observeRacePoints(leagueId: leagueId, raceId: raceId) { [weak self] points in
-            self?.selectedRacePoints = points
+        racePointsListener = repository.observeRacePointsDocument(leagueId: leagueId, raceId: raceId) { [weak self] document in
+            self?.selectedRacePointsDocument = document
+            self?.selectedRacePoints = document.drivers
+                .map { ($0.driverId, $0.basePoints) }
+                .sorted { $0.1 > $1.1 }
         }
 
         raceScoreListener = repository.observeWeeklyScore(leagueId: leagueId, raceId: raceId, userId: userId) { [weak self] score in
@@ -577,6 +651,8 @@ final class PlayerViewModel: ObservableObject {
         selectedRacePickListener?.remove()
         selectedRacePicksListener?.remove()
         liveRacePointsListener?.remove()
+        liveRacePicksListener?.remove()
+        liveRacePicksUnlockTimer?.invalidate()
         standingsSnapshotListener?.remove()
         adjustmentsListener?.remove()
         notificationsListener?.remove()
@@ -588,6 +664,8 @@ final class PlayerViewModel: ObservableObject {
         selectedRacePickListener = nil
         selectedRacePicksListener = nil
         liveRacePointsListener = nil
+        liveRacePicksListener = nil
+        liveRacePicksUnlockTimer = nil
         standingsSnapshotListener = nil
         adjustmentsListener = nil
         notificationsListener = nil

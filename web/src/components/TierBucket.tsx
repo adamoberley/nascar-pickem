@@ -10,7 +10,7 @@ interface Props {
   onToggle: (driverId: string, limit: number) => void;
   /** Tier color for row styling (matches iOS) */
   tierColor?: "yellow" | "red" | "blue";
-  /** When race is live, driverId -> current running position (show P1, P2, etc. on selected picks). */
+  /** When race is live, driverId -> current running position. */
   driverPositionByDriverId?: Record<string, number>;
   /** When race is locked/completed, driverId -> points for this race. */
   driverPointsByDriverId?: Record<string, number>;
@@ -39,6 +39,7 @@ export function TierBucket({
           const driver = driversById[driverId];
           const active = selected.includes(driverId);
           const position = driverPositionByDriverId?.[driverId];
+          const showPositionPrefix = active && position != null;
           const hasPoints =
             driverPointsByDriverId != null &&
             Object.prototype.hasOwnProperty.call(driverPointsByDriverId, driverId);
@@ -53,13 +54,18 @@ export function TierBucket({
               onClick={() => onToggle(driverId, limit)}
             >
               <span className="tier-driver-line">
-                #{driver?.number ?? "--"} {driver?.name ?? driverId}
+                {showPositionPrefix ? (
+                  <span className="tier-driver-position-inline" aria-label={`Position ${position}`}>
+                    #{position}
+                  </span>
+                ) : (
+                  <>#{driver?.number ?? "--"} </>
+                )}
+                {driver?.name ?? driverId}
                 {driver?.team ? <span className="tier-driver-team">{driver.team}</span> : null}
               </span>
               {active ? (
-                position != null ? (
-                  <span className="tier-driver-position" aria-label={`Position ${position}`}>P{position}</span>
-                ) : points != null ? (
+                points != null ? (
                   <span className="tier-driver-points" aria-label={`${points} points`}>{points}</span>
                 ) : (
                   <span className="tier-driver-check" aria-hidden>✓</span>

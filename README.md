@@ -61,7 +61,7 @@ Core behavior:
 1. Compute tiers from latest standings snapshot (`computeRaceTiers`; next-race tier only).
 2. Auto-lock picks by lock time (`lockPicksAtRaceStart` every 30 minutes on Sunday).
 3. Scheduled weekly ingest (`ingestLeagueDataDaily`) and weekly result refresh (`refreshRaceResults`) from NASCAR CF feeds.
-4. Live race sync from NASCAR.com via admin callable (`syncLiveRaceNow`).
+4. Live race sync from NASCAR.com via callable (`syncLiveRaceNow`) using live stage points plus lap/position metadata.
 5. Re-score races when lock cycles, manual live sync, result refresh, or admin updates change race data.
 6. Recompute season totals/rank as part of each race re-score.
 7. Admin callables:
@@ -70,7 +70,7 @@ Core behavior:
    - `manualRefreshData`
    - `updateLeagueSettings`
    - `updateMemberPaidStatus`
-   - `syncLiveRaceNow` (trigger live NASCAR feed sync during a race)
+   - `syncLiveRaceNow` (trigger live NASCAR stage-points sync during a race)
 
 Player/admin callables:
 - `createLeague`
@@ -86,7 +86,7 @@ Ingest is now direct from NASCAR CF endpoints (no provider adapter required):
 - **Schedule + race metadata:** `race_list_basic.json`
 - **Standings:** `racinginsights-points-feed.json`
 - **Completed-race results/points:** `weekend-feed.json`
-- **Live race scoring:** `live-feed.json` + `live-stage-points.json`
+- **Live race scoring:** `live-stage-points.json` for in-race points, with `live-feed.json` for lap/stage/position metadata
 
 See [docs/race-results-sources.md](docs/race-results-sources.md).
 
@@ -109,7 +109,7 @@ Admin features:
 - Member paid/unpaid toggles
 - Submission monitor (who has/hasn't picked)
 - Manual data refresh
-- Sync live race (trigger NASCAR.com live feed during in-progress races)
+- Sync live race (trigger NASCAR.com stage-points sync during in-progress races)
 - Manual race point override
 - Add penalties/corrections
 

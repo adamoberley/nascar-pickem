@@ -65,6 +65,7 @@ function toDriversMap(drivers: Array<DriverDoc & { id: string }>): Record<string
 export default function App() {
   const { user, loading: authLoading } = useAuthState();
   const [tab, setTab] = useState<AppTab>("home");
+  const [homeNowMs, setHomeNowMs] = useState(() => Date.now());
 
   const [memberships, setMemberships] = useState<Membership[]>([]);
   const [membershipsLoading, setMembershipsLoading] = useState(true);
@@ -348,6 +349,47 @@ export default function App() {
     () => liveWeeklyScoresState.data,
     [liveWeeklyScoresState.data],
   );
+  const liveRaceStartMs = liveRaceForDisplay?.startTime?.toMillis?.() ?? 0;
+  useEffect(() => {
+    if (
+      tab !== "home" ||
+      !liveRaceForDisplay ||
+      liveRaceForDisplay.status === "completed" ||
+      liveRaceStartMs <= 0
+    ) {
+      return;
+    }
+
+    setHomeNowMs(Date.now());
+    if (liveRaceStartMs <= Date.now()) {
+      return;
+    }
+    const intervalId = window.setInterval(() => {
+      setHomeNowMs(Date.now());
+    }, 1000);
+    return () => window.clearInterval(intervalId);
+  }, [liveRaceForDisplay?.id, liveRaceForDisplay?.status, liveRaceStartMs, tab]);
+  const canSeeAllLiveRacePicks = useMemo(() => {
+    if (!liveRaceForDisplay) return false;
+    if (liveRaceForDisplay.status === "completed") return true;
+    return liveRaceStartMs > 0 && liveRaceStartMs <= homeNowMs;
+  }, [homeNowMs, liveRaceForDisplay?.id, liveRaceForDisplay?.status, liveRaceStartMs]);
+  const liveRacePicksQuery = useMemo<Query | null>(() => {
+    if (
+      tab !== "home" ||
+      !selectedLeagueId ||
+      !liveRaceForDisplay ||
+      !canSeeAllLiveRacePicks
+    ) {
+      return null;
+    }
+
+    return query(
+      collection(db, "leagues", selectedLeagueId, "picks"),
+      where("raceId", "==", liveRaceForDisplay.id),
+    );
+  }, [canSeeAllLiveRacePicks, liveRaceForDisplay?.id, selectedLeagueId, tab]);
+  const liveRacePicksState = useFirestoreCollection<PickDoc>(liveRacePicksQuery);
 
   const selectedRaceWeeklyScoresQuery = useMemo<Query | null>(() => {
     if (tab !== "race" || !selectedLeagueId || !selectedRaceId) return null;
@@ -761,11 +803,15 @@ export default function App() {
         {tab === "home" ? (
           <div id="panel-home" role="tabpanel" aria-labelledby="tab-home">
             <HomeTab
+              selectedLeagueId={selectedLeagueId}
+              userId={user?.uid ?? null}
               primaryRace={primaryRace ?? null}
               upcomingRace={upcomingRace ?? null}
               liveRace={liveRaceForDisplay}
               liveRacePoints={liveRacePointsForDisplay}
               liveWeeklyScores={liveWeeklyScores}
+              liveRacePicksState={liveRacePicksState}
+              canSeeAllLiveRacePicks={canSeeAllLiveRacePicks}
               driverPositionByDriverId={driverPositionByDriverId}
               driverPointsByDriverId={primaryRaceDriverPointsByDriverId}
               pickState={pickState}
@@ -889,6 +935,7 @@ export default function App() {
           racePointsSummaryState.error,
           allWeeklyScoresState.error,
           liveWeeklyScoresState.error,
+          liveRacePicksState.error,
           selectedRaceWeeklyScoresState.error,
           selectedRacePicksState.error,
           raceMonitorPicksState.error,

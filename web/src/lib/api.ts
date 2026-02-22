@@ -18,6 +18,7 @@ import type {
   JoinLeagueByInviteRequest,
   JoinLeagueByInviteResponse,
   SavePickRequest,
+  SyncLiveRaceNowResponse,
   UpdateLeagueSettingsRequest,
   UpdateMemberPaidStatusRequest,
 } from "../../../shared/callables";
@@ -100,13 +101,16 @@ export async function manualRefreshData(input: { leagueId: string }): Promise<vo
   await fn(input);
 }
 
-/** Pull latest live race points from NASCAR.com feed (admin). */
+/** Pull latest live race points from NASCAR.com feed. */
 export async function syncLiveRaceNow(input: {
   leagueId: string;
-}): Promise<{ ok: boolean; updated: boolean; reason?: string }> {
-  const fn = httpsCallable(functions, "syncLiveRaceNow");
+}): Promise<SyncLiveRaceNowResponse> {
+  const fn = httpsCallable<{ leagueId: string }, SyncLiveRaceNowResponse>(
+    functions,
+    "syncLiveRaceNow",
+  );
   const result = await fn(input);
-  return result.data as { ok: boolean; updated: boolean; reason?: string };
+  return result.data;
 }
 
 export async function manualUpsertRacePoints(input: {

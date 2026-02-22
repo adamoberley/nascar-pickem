@@ -596,7 +596,11 @@ final class LeagueRepository {
                     RacePointsDriverItem(
                         driverId: $0["driverId"] as? String ?? "",
                         basePoints: $0["basePoints"] as? Int ?? 0,
-                        runningPosition: $0["runningPosition"] as? Int
+                        runningPosition: ($0["runningPosition"] as? Int) ?? ($0["running_position"] as? Int),
+                        finishPosition: ($0["finishPosition"] as? Int) ??
+                            ($0["finish_position"] as? Int) ??
+                            ($0["finishingPosition"] as? Int) ??
+                            ($0["finishing_position"] as? Int)
                     )
                 }
                 let stageMap = data["liveStage"] as? [String: Any]
@@ -726,7 +730,7 @@ final class LeagueRepository {
         }
     }
 
-    func syncLiveRaceNow(leagueId: String, completion: @escaping (Result<String, Error>) -> Void) {
+    func syncLiveRaceNow(leagueId: String, completion: @escaping (Result<LiveRaceSyncResult, Error>) -> Void) {
         functions.httpsCallable("syncLiveRaceNow").call(["leagueId": leagueId]) { result, error in
             if let error {
                 completion(.failure(error))
@@ -735,11 +739,22 @@ final class LeagueRepository {
             let data = result?.data as? [String: Any]
             let updated = data?["updated"] as? Bool ?? false
             let reason = data?["reason"] as? String
+            let retryAfterSeconds =
+                (data?["retryAfterSeconds"] as? Int)
+                ?? (data?["retryAfterSeconds"] as? NSNumber)?.intValue
             if updated {
-                completion(.success("Live points updated from NASCAR.com."))
+                completion(.success(LiveRaceSyncResult(
+                    updated: true,
+                    message: "Live points updated from NASCAR.com.",
+                    retryAfterSeconds: retryAfterSeconds
+                )))
                 return
             }
-            completion(.success(reason ?? "No live race in progress or feed unavailable."))
+            completion(.success(LiveRaceSyncResult(
+                updated: false,
+                message: reason ?? "No live race in progress or feed unavailable.",
+                retryAfterSeconds: retryAfterSeconds
+            )))
         }
     }
 

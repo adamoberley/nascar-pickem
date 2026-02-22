@@ -16,6 +16,12 @@ import {
   normalizeOfficialRaceResults,
   normalizeRacePointDrivers,
 } from "../lib/race-points";
+import {
+  buildPickTierLookups,
+  getPickTierForDriverId,
+  getPickTierForResultRow,
+  type PickTierColor,
+} from "../lib/pick-tiers";
 
 interface Props {
   races: (RaceDoc & { id: string })[];
@@ -50,9 +56,10 @@ interface RaceLeaderboardRow {
 
 interface RaceResultRow {
   key: string;
-  finishPosition: number | null;
+  position: number | null;
   name: string;
   points: number;
+  tierColor: PickTierColor | null;
 }
 
 function RaceLoadingState({
@@ -162,6 +169,10 @@ export function RaceTab({
     selectedRacePickState.loading,
     selectedRacePointsState.loading,
   ]);
+  const pickTierLookups = useMemo(
+    () => buildPickTierLookups(selectedRacePickState.data, driversById),
+    [driversById, selectedRacePickState.data],
+  );
   const selectedRaceIsFuture =
     Boolean(selectedRace) &&
     selectedRace?.status === "scheduled" &&
@@ -248,9 +259,16 @@ export function RaceTab({
             row.vehicleNumber != null
               ? `car-${row.vehicleNumber}`
               : `official-${row.finishPosition}-${row.driverName}`,
-          finishPosition: row.finishPosition,
+          position: row.finishPosition,
           name: row.driverName || row.vehicleNumber || "Unknown Driver",
           points: row.points,
+          tierColor: getPickTierForResultRow(
+            {
+              vehicleNumber: row.vehicleNumber ?? null,
+              driverName: row.driverName,
+            },
+            pickTierLookups,
+          ),
         }));
     }
 
@@ -261,14 +279,15 @@ export function RaceTab({
     return normalizedRacePointDrivers
       .map((entry) => ({
         key: entry.driverId,
-        finishPosition: entry.finishPosition ?? entry.runningPosition ?? null,
+        position: entry.finishPosition ?? entry.runningPosition ?? null,
         name: driversById[entry.driverId]?.name ?? entry.driverId,
         points: entry.basePoints,
+        tierColor: getPickTierForDriverId(entry.driverId, pickTierLookups),
       }))
       .sort((a, b) => {
-        const aFinish = a.finishPosition ?? Number.MAX_SAFE_INTEGER;
-        const bFinish = b.finishPosition ?? Number.MAX_SAFE_INTEGER;
-        if (aFinish !== bFinish) return aFinish - bFinish;
+        const aPosition = a.position ?? Number.MAX_SAFE_INTEGER;
+        const bPosition = b.position ?? Number.MAX_SAFE_INTEGER;
+        if (aPosition !== bPosition) return aPosition - bPosition;
         if (b.points !== a.points) return b.points - a.points;
         return a.name.localeCompare(b.name);
       });
@@ -276,6 +295,7 @@ export function RaceTab({
     normalizedOfficialResults,
     normalizedRacePointDrivers,
     driversById,
+    pickTierLookups,
   ]);
   const maxPossibleRacePoints = useMemo(() => {
     const bestTierTotal = (driverIds: string[], pickCount: number): number | null => {
@@ -370,6 +390,7 @@ export function RaceTab({
                   driverIds={selectedRacePickState.data.tierA}
                   driversById={driversById}
                   tierColor="yellow"
+                  showCount={false}
                   driverPointsByDriverId={raceDriverPointsByDriverId}
                 />
                 <PicksTierSummary
@@ -378,6 +399,7 @@ export function RaceTab({
                   driverIds={selectedRacePickState.data.tierB}
                   driversById={driversById}
                   tierColor="red"
+                  showCount={false}
                   driverPointsByDriverId={raceDriverPointsByDriverId}
                 />
                 <PicksTierSummary
@@ -386,6 +408,7 @@ export function RaceTab({
                   driverIds={selectedRacePickState.data.tierC}
                   driversById={driversById}
                   tierColor="blue"
+                  showCount={false}
                   driverPointsByDriverId={raceDriverPointsByDriverId}
                 />
               </div>
@@ -450,6 +473,7 @@ export function RaceTab({
                                 driverIds={row.pick.tierA}
                                 driversById={driversById}
                                 tierColor="yellow"
+                                showCount={false}
                                 driverPointsByDriverId={row.driverPointsByDriverId}
                               />
                               <PicksTierSummary
@@ -458,6 +482,7 @@ export function RaceTab({
                                 driverIds={row.pick.tierB}
                                 driversById={driversById}
                                 tierColor="red"
+                                showCount={false}
                                 driverPointsByDriverId={row.driverPointsByDriverId}
                               />
                               <PicksTierSummary
@@ -466,6 +491,7 @@ export function RaceTab({
                                 driverIds={row.pick.tierC}
                                 driversById={driversById}
                                 tierColor="blue"
+                                showCount={false}
                                 driverPointsByDriverId={row.driverPointsByDriverId}
                               />
                             </div>
@@ -488,15 +514,20 @@ export function RaceTab({
             ) : raceResultRows.length ? (
               <>
                 <div className="race-results-headings" aria-hidden>
-                  <span className="race-result-finish">Finish</span>
+                  <span className="race-result-finish">Pos</span>
                   <span className="race-result-name">Name</span>
                   <span className="race-result-pts">Points</span>
                 </div>
                 <ul className="race-results-list">
                   {raceResultRows.map((entry) => (
-                    <li key={entry.key} className="race-result-item">
+                    <li
+                      key={entry.key}
+                      className={`race-result-item${
+                        entry.tierColor ? ` race-result-item--${entry.tierColor}` : ""
+                      }`}
+                    >
                       <span className="race-result-finish">
-                        {entry.finishPosition != null ? entry.finishPosition : "—"}
+                        {entry.position != null ? entry.position : "—"}
                       </span>
                       <span className="race-result-name">{entry.name}</span>
                       <span className="race-result-pts">{entry.points}</span>

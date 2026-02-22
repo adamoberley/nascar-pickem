@@ -48,8 +48,8 @@ During an active race:
 
 Live scoring uses:
 
-- `live-feed.json` (running order, lap/stage metadata)
-- `live-stage-points.json` (stage points)
+- `live-stage-points.json` (in-race scoring points)
+- `live-feed.json` (running order and lap/stage metadata only)
 
 ## 7. Share and play
 

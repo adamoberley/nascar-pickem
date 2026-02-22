@@ -58,6 +58,8 @@ export interface SyncLiveRaceNowRequest {
 export interface SyncLiveRaceNowResponse {
   ok: boolean;
   updated: boolean;
+  throttled?: boolean;
+  retryAfterSeconds?: number;
   reason?: string;
 }
 

@@ -7,6 +7,23 @@ struct RaceView: View {
     @State private var showingRacePicker = false
     @State private var expandedLeaderboardUserId: String?
 
+    private enum PickTier: String {
+        case tierA
+        case tierB
+        case tierC
+
+        var color: Color {
+            switch self {
+            case .tierA:
+                return NASCARTheme.yellow
+            case .tierB:
+                return NASCARTheme.red
+            case .tierC:
+                return NASCARTheme.blue
+            }
+        }
+    }
+
     private struct LeaderboardRow: Identifiable {
         let id: String
         let displayName: String
@@ -14,8 +31,35 @@ struct RaceView: View {
         let weeklyTotal: Int
     }
 
+    private struct ResultRow: Identifiable {
+        let driverId: String
+        let points: Int
+        let position: Int?
+        var id: String { driverId }
+    }
+
     private var racePointsByDriverId: [String: Int] {
         Dictionary(viewModel.selectedRacePointsWithAdjustments, uniquingKeysWith: { current, _ in current })
+    }
+
+    private var selectedRaceResultRows: [ResultRow] {
+        viewModel.selectedRacePointsWithAdjustments
+            .map { driverId, points in
+                ResultRow(
+                    driverId: driverId,
+                    points: points,
+                    position: viewModel.selectedRacePositionByDriverId[driverId]
+                )
+            }
+            .sorted { lhs, rhs in
+                let lhsPos = lhs.position ?? Int.max
+                let rhsPos = rhs.position ?? Int.max
+                if lhsPos != rhsPos { return lhsPos < rhsPos }
+                if lhs.points != rhs.points { return lhs.points > rhs.points }
+                let lhsName = viewModel.driversById[lhs.driverId]?.name ?? lhs.driverId
+                let rhsName = viewModel.driversById[rhs.driverId]?.name ?? rhs.driverId
+                return lhsName < rhsName
+            }
     }
 
     private var selectedRacePickTotal: Int? {
@@ -23,6 +67,133 @@ struct RaceView: View {
         let all = pick.tierA + pick.tierB + pick.tierC
         if all.isEmpty { return nil }
         return all.reduce(0) { $0 + (racePointsByDriverId[$1] ?? 0) }
+    }
+
+    private var selectedRaceUserPickTierByDriverId: [String: PickTier] {
+        guard let pick = viewModel.selectedRacePick else { return [:] }
+        var map: [String: PickTier] = [:]
+        pick.tierA.forEach { map[$0] = .tierA }
+        pick.tierB.forEach { map[$0] = .tierB }
+        pick.tierC.forEach { map[$0] = .tierC }
+        return map
+    }
+
+    private var selectedRaceUserPickTierByCarNumber: [String: PickTier] {
+        guard let pick = viewModel.selectedRacePick else { return [:] }
+        var map: [String: PickTier] = [:]
+
+        func add(ids: [String], tier: PickTier) {
+            for driverId in ids {
+                if let driver = viewModel.driversById[driverId] {
+                    let key = normalizedCarNumber(driver.number)
+                    if !key.isEmpty { map[key] = tier }
+                }
+                let keyFromRaw = normalizedCarNumber(driverId)
+                if !keyFromRaw.isEmpty, map[keyFromRaw] == nil {
+                    map[keyFromRaw] = tier
+                }
+            }
+        }
+
+        add(ids: pick.tierA, tier: .tierA)
+        add(ids: pick.tierB, tier: .tierB)
+        add(ids: pick.tierC, tier: .tierC)
+        return map
+    }
+
+    private var selectedRaceUserPickTierByNameKey: [String: PickTier] {
+        guard let pick = viewModel.selectedRacePick else { return [:] }
+        var map: [String: PickTier] = [:]
+
+        func add(ids: [String], tier: PickTier) {
+            for driverId in ids {
+                if let name = viewModel.driversById[driverId]?.name {
+                    let key = normalizedName(name)
+                    if !key.isEmpty { map[key] = tier }
+                }
+                let rawKey = normalizedName(driverId)
+                if !rawKey.isEmpty, map[rawKey] == nil {
+                    map[rawKey] = tier
+                }
+            }
+        }
+
+        add(ids: pick.tierA, tier: .tierA)
+        add(ids: pick.tierB, tier: .tierB)
+        add(ids: pick.tierC, tier: .tierC)
+        return map
+    }
+
+    private var driverIdByCarNumber: [String: String] {
+        var map: [String: String] = [:]
+        for driver in viewModel.drivers {
+            let key = normalizedCarNumber(driver.number)
+            if !key.isEmpty, map[key] == nil {
+                map[key] = driver.id
+            }
+        }
+        return map
+    }
+
+    private func normalizedCarNumber(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return "" }
+        if let numeric = Int(trimmed) {
+            return String(numeric)
+        }
+        return trimmed
+    }
+
+    private func normalizedName(_ value: String) -> String {
+        value
+            .lowercased()
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .joined()
+    }
+
+    private func selectedRaceTier(forDriverKey rawDriverKey: String) -> PickTier? {
+        let key = rawDriverKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if key.isEmpty { return nil }
+
+        if let direct = selectedRaceUserPickTierByDriverId[key] {
+            return direct
+        }
+
+        let carKey = normalizedCarNumber(key)
+        if !carKey.isEmpty, let tier = selectedRaceUserPickTierByCarNumber[carKey] {
+            return tier
+        }
+
+        if let resolvedId = driverIdByCarNumber[carKey],
+           let tier = selectedRaceUserPickTierByDriverId[resolvedId] {
+            return tier
+        }
+
+        if let driver = viewModel.driversById[key] {
+            let nameKey = normalizedName(driver.name)
+            if let tier = selectedRaceUserPickTierByNameKey[nameKey] {
+                return tier
+            }
+        }
+
+        let rawNameKey = normalizedName(key)
+        if !rawNameKey.isEmpty, let tier = selectedRaceUserPickTierByNameKey[rawNameKey] {
+            return tier
+        }
+
+        return nil
+    }
+
+    private func resolvedDriver(forLookupKey rawDriverKey: String) -> DriverItem? {
+        if let direct = viewModel.driversById[rawDriverKey] {
+            return direct
+        }
+        let carKey = normalizedCarNumber(rawDriverKey)
+        guard !carKey.isEmpty,
+              let resolvedId = driverIdByCarNumber[carKey] else {
+            return nil
+        }
+        return viewModel.driversById[resolvedId]
     }
 
     private var raceLeaderboardRows: [LeaderboardRow] {
@@ -250,7 +421,7 @@ struct RaceView: View {
                         }
                         .padding(.horizontal, 10)
                         .padding(.vertical, 8)
-                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(NASCARTheme.secondarySurface(for: colorScheme)))
+                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.clear))
                     }
                 }
             }
@@ -263,29 +434,45 @@ struct RaceView: View {
             Text("Results")
                 .font(NASCARTheme.displayFont(size: 24, weight: .bold))
                 .textCase(.uppercase)
-            if viewModel.selectedRacePointsWithAdjustments.isEmpty {
+            if selectedRaceResultRows.isEmpty {
                 Text("No official points loaded yet.")
                     .font(NASCARTheme.textFont(size: 15))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 VStack(alignment: .leading, spacing: 8) {
-                    ForEach(viewModel.selectedRacePointsWithAdjustments, id: \.0) { driverId, points in
-                        HStack {
+                    ForEach(selectedRaceResultRows) { row in
+                        let driver = resolvedDriver(forLookupKey: row.driverId)
+                        let highlightColor = selectedRaceTier(forDriverKey: row.driverId)?.color
+                        HStack(spacing: 8) {
+                            Text(row.position.map(String.init) ?? "—")
+                                .font(NASCARTheme.textFont(size: 13, weight: .bold))
+                                .foregroundStyle(.secondary)
+                                .frame(width: 28, alignment: .leading)
+                                .padding(.leading, 2)
                             HStack(spacing: 6) {
-                                Text(viewModel.driversById[driverId]?.name ?? driverId)
+                                Text(driver?.name ?? row.driverId)
                                     .font(NASCARTheme.textFont(size: 15, weight: .semibold))
-                                if let team = viewModel.driversById[driverId]?.team, !team.isEmpty {
+                                    .foregroundStyle(.primary)
+                                if let team = driver?.team, !team.isEmpty {
                                     Text(team)
                                         .font(NASCARTheme.textFont(size: 12))
                                         .foregroundStyle(.secondary)
                                 }
                             }
                             Spacer()
-                            Text("\(points)")
+                            Text("\(row.points)")
                                 .font(NASCARTheme.textFont(size: 15, weight: .bold))
+                                .foregroundStyle(highlightColor ?? .primary)
+                                .frame(minWidth: 28, alignment: .trailing)
+                                .padding(.trailing, 2)
                         }
-                        .padding(.vertical, 2)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill((highlightColor ?? .clear).opacity(colorScheme == .dark ? 0.18 : 0.1))
+                        )
                     }
                 }
             }
@@ -334,21 +521,45 @@ struct RaceView: View {
         }
     }
 
-    private func picksSummary(title: String, ids: [String], color: Color) -> some View {
+    private func picksSummary(title: String, ids: [String], color _: Color) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(NASCARTheme.textFont(size: 12, weight: .bold))
-                .foregroundStyle(color)
+                .foregroundStyle(.primary)
             ForEach(ids, id: \.self) { driverId in
-                HStack {
-                    Text("#\(viewModel.driversById[driverId]?.number ?? "--") \(viewModel.driversById[driverId]?.name ?? driverId)")
-                        .font(NASCARTheme.textFont(size: 13))
+                let driver = viewModel.driversById[driverId]
+                let position = viewModel.selectedRacePositionByDriverId[driverId]
+                let pickedTier = selectedRaceTier(forDriverKey: driverId)
+                let highlightColor = pickedTier?.color
+                HStack(spacing: 6) {
+                    HStack(spacing: 6) {
+                        if let position {
+                            Text("#\(position)")
+                                .font(NASCARTheme.textFont(size: 13, weight: .bold))
+                                .foregroundStyle(.primary)
+                        } else {
+                            Text("#\(driver?.number ?? "--")")
+                                .font(NASCARTheme.textFont(size: 13))
+                                .foregroundStyle(.primary)
+                        }
+                        Text(driver?.name ?? driverId)
+                            .font(NASCARTheme.textFont(size: 13))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                    }
                     Spacer()
                     if let points = racePointsByDriverId[driverId] {
                         Text("\(points)")
                             .font(NASCARTheme.textFont(size: 13, weight: .bold))
+                            .foregroundStyle(.primary)
                     }
                 }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 2)
+                .background(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill((highlightColor ?? .clear).opacity(colorScheme == .dark ? 0.22 : 0.1))
+                )
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

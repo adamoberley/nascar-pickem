@@ -434,7 +434,7 @@ struct StandingsView: View {
         case 1: return Self.gold.opacity(colorScheme == .dark ? 0.22 : 0.18)
         case 2: return Self.silver.opacity(colorScheme == .dark ? 0.2 : 0.16)
         case 3: return Self.bronze.opacity(colorScheme == .dark ? 0.2 : 0.16)
-        default: return NASCARTheme.secondarySurface(for: colorScheme)
+        default: return .clear
         }
     }
 

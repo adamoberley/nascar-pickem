@@ -329,8 +329,8 @@ struct AdminView: View {
                             viewModel.syncLiveRaceNow { liveResult in
                                 adminBusy = false
                                 switch liveResult {
-                                case .success(let message):
-                                    adminMessage = "Data refresh complete. \(message)"
+                                case .success(let result):
+                                    adminMessage = "Data refresh complete. \(result.message)"
                                 case .failure:
                                     adminMessage = "Data refresh complete. Live sync unavailable."
                                 }
@@ -350,8 +350,8 @@ struct AdminView: View {
                     viewModel.syncLiveRaceNow { result in
                         adminBusy = false
                         switch result {
-                        case .success(let message):
-                            adminMessage = message
+                        case .success(let sync):
+                            adminMessage = sync.message
                         case .failure(let error):
                             adminError = error.localizedDescription
                         }

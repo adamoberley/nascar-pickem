@@ -134,43 +134,61 @@ struct PicksView: View {
                     let driver = viewModel.driversById[driverId]
                     let isSelected = selected.contains(driverId)
                     let runningPosition = viewModel.driverPositionByDriverId[driverId]
+                    let points = viewModel.liveRacePointsByDriverId[driverId]
+                    let showPositionPrefix = isSelected && runningPosition != nil
                     Button {
                         if !disabled { toggle(driverId: driverId, tierTitle: title, limit: limit) }
                     } label: {
                         HStack(spacing: 6) {
-                            Text("#\(driver?.number ?? "--") \(driver?.name ?? driverId)")
-                                .font(NASCARTheme.textFont(size: 15, weight: .semibold))
-                                .lineLimit(1)
-                                .layoutPriority(1)
-                            if let team = driver?.team, !team.isEmpty {
-                                Text(team)
-                                    .font(NASCARTheme.textFont(size: 12))
-                                    .foregroundStyle(.secondary)
+                            HStack(spacing: 6) {
+                                if showPositionPrefix, let pos = runningPosition {
+                                    Text("#\(pos)")
+                                        .font(NASCARTheme.textFont(size: 15, weight: .bold))
+                                        .foregroundStyle(.primary)
+                                } else {
+                                    Text("#\(driver?.number ?? "--")")
+                                        .font(NASCARTheme.textFont(size: 15, weight: .semibold))
+                                }
+                                Text(driver?.name ?? driverId)
+                                    .font(NASCARTheme.textFont(size: 15, weight: .semibold))
                                     .lineLimit(1)
+                                    .layoutPriority(1)
+                                if let team = driver?.team, !team.isEmpty {
+                                    Text(team)
+                                        .font(NASCARTheme.textFont(size: 12))
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
                             }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .mask(
-                            LinearGradient(
-                                stops: [
-                                    .init(color: .black, location: 0),
-                                    .init(color: .black, location: 0.82),
-                                    .init(color: .clear, location: 1)
-                                ],
-                                startPoint: .leading,
-                                endPoint: .trailing
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .mask(
+                                LinearGradient(
+                                    stops: [
+                                        .init(color: .black, location: 0),
+                                        .init(color: .black, location: 0.82),
+                                        .init(color: .clear, location: 1)
+                                    ],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
                             )
-                        )
-                        .overlay(alignment: .trailing) {
-                            if let pos = runningPosition {
-                                Text("P\(pos)")
-                                    .font(NASCARTheme.textFont(size: 13, weight: .bold))
-                                    .foregroundStyle(tierColor)
-                                    .padding(.trailing, 2)
-                            } else if isSelected {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .font(.system(size: 16))
-                                    .foregroundStyle(tierColor)
+
+                            if isSelected {
+                                if let points {
+                                    Text("\(points)")
+                                        .font(NASCARTheme.textFont(size: 14, weight: .bold))
+                                        .foregroundStyle(tierColor)
+                                        .padding(.trailing, 2)
+                                } else {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .font(.system(size: 16))
+                                        .foregroundStyle(tierColor)
+                                        .padding(.trailing, 2)
+                                }
+                            } else if let points {
+                                Text("\(points)")
+                                    .font(NASCARTheme.textFont(size: 14, weight: .semibold))
+                                    .foregroundStyle(.secondary)
                                     .padding(.trailing, 2)
                             }
                         }

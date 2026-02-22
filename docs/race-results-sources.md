@@ -34,8 +34,8 @@ The app now uses NASCAR CF feeds directly for schedule, standings, completed-rac
 - Live feed: `https://cf.nascar.com/live/feeds/live-feed.json`
 - Stage feed: `https://cf.nascar.com/cacher/{year}/1/{race_id}/live-stage-points.json`
 - Used for:
-  - in-race driver points (running position + stage points)
-  - lap/stage metadata in UI
+  - in-race driver points (stage points only)
+  - lap/running-position/stage metadata in UI
 
 ## Optional/auxiliary feeds
 

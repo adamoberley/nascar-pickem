@@ -106,6 +106,8 @@ struct RacePointsDriverItem {
     let basePoints: Int
     /// Current running position (1-based) when from live feed.
     let runningPosition: Int?
+    /// Official finish position (1-based) when available from completed race results.
+    let finishPosition: Int?
 }
 
 /// Full race points document for a race (supports live lap/stage and running positions).
@@ -148,6 +150,12 @@ struct UserNotificationItem: Identifiable {
     let readAt: Date?
 
     var isRead: Bool { readAt != nil }
+}
+
+struct LiveRaceSyncResult {
+    let updated: Bool
+    let message: String
+    let retryAfterSeconds: Int?
 }
 
 /// A row in the merged standings (real members + member names not yet joined).

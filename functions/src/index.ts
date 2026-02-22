@@ -64,6 +64,7 @@ setGlobalOptions({
 const LOCK_CHECK_SCHEDULE = "every 30 minutes";
 const PICK_REMINDER_SCHEDULE = "0 13 * * SUN";
 const PICK_REMINDER_LOOKAHEAD_HOURS = 168;
+const LIVE_SYNC_COOLDOWN_MS = 60 * 1000;
 const ENABLE_PUSH_REMINDERS = process.env.ENABLE_PUSH_REMINDERS !== "0";
 const ENABLE_EMAIL_REMINDERS = process.env.ENABLE_EMAIL_REMINDERS === "1";
 const REMINDER_EMAIL_FROM = process.env.REMINDER_EMAIL_FROM?.trim() ?? "";
@@ -456,6 +457,43 @@ function normalizePlatform(raw: string): "ios" | "web" {
     throw new HttpsError("invalid-argument", "platform must be 'ios' or 'web'.");
   }
   return lower;
+}
+
+async function reserveLiveSyncCooldownWindow(
+  leagueId: string,
+  userId: string,
+): Promise<{ allowed: true } | { allowed: false; retryAfterSeconds: number }> {
+  const throttleRef = leagueRef(leagueId).collection("meta").doc("liveSync");
+  const now = nowTimestamp();
+  const nowMs = now.toMillis();
+
+  return db.runTransaction(async (transaction) => {
+    const throttleSnap = await transaction.get(throttleRef);
+    const throttleData = throttleSnap.data() as { lastRequestedAt?: Timestamp } | undefined;
+    const lastRequestedAtMs = throttleData?.lastRequestedAt?.toMillis?.() ?? 0;
+
+    if (lastRequestedAtMs > 0) {
+      const elapsedMs = nowMs - lastRequestedAtMs;
+      if (elapsedMs < LIVE_SYNC_COOLDOWN_MS) {
+        const retryAfterSeconds = Math.max(
+          1,
+          Math.ceil((LIVE_SYNC_COOLDOWN_MS - elapsedMs) / 1000),
+        );
+        return { allowed: false as const, retryAfterSeconds };
+      }
+    }
+
+    transaction.set(
+      throttleRef,
+      {
+        lastRequestedAt: now,
+        lastRequestedBy: userId,
+        updatedAt: now,
+      },
+      { merge: true },
+    );
+    return { allowed: true as const };
+  });
 }
 
 function withHttpsErrorHandling<TResponse, TData extends Record<string, unknown> = Record<string, unknown>>(
@@ -951,9 +989,35 @@ export const syncLiveRaceNow = onCall({ invoker: "public" }, withHttpsErrorHandl
   const userId = requireAuthUid(request.auth?.uid);
   const leagueId = requireString(request.data?.leagueId, "leagueId");
   logger.info("syncLiveRaceNow called", { leagueId, userId });
-  await assertAdminInLeague(leagueId, userId);
+  await assertMember(leagueId, userId);
+
+  const cooldownWindow = await reserveLiveSyncCooldownWindow(leagueId, userId);
+  if (!cooldownWindow.allowed) {
+    logger.info("syncLiveRaceNow throttled", {
+      leagueId,
+      userId,
+      retryAfterSeconds: cooldownWindow.retryAfterSeconds,
+    });
+    return {
+      ok: true,
+      updated: false,
+      throttled: true,
+      retryAfterSeconds: cooldownWindow.retryAfterSeconds,
+      reason: `Please wait ${cooldownWindow.retryAfterSeconds}s before refreshing live data again.`,
+    };
+  }
+
   const result = await applyNascarLiveFeedToLeague(leagueId);
-  return result.updated ? { ok: true, updated: true } : { ok: true, updated: false, reason: result.reason };
+  const cooldownSeconds = Math.ceil(LIVE_SYNC_COOLDOWN_MS / 1000);
+  return result.updated
+    ? { ok: true, updated: true, throttled: false, retryAfterSeconds: cooldownSeconds }
+    : {
+        ok: true,
+        updated: false,
+        throttled: false,
+        retryAfterSeconds: cooldownSeconds,
+        reason: result.reason,
+      };
 }));
 
 export const ingestLeagueDataDaily = onSchedule(

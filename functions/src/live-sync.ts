@@ -223,32 +223,27 @@ export async function applyNascarLiveFeedToLeague(
     return { updated: false, reason: "No matching lock/start-eligible race found for this league." };
   }
 
+  const runningPositionByDriverId = new Map<string, number>();
+  for (const fd of feed.drivers) {
+    const driverId = resolveDriverIdFromVehicleNumber(fd.vehicleNumber, numberToDriverId);
+    if (driverId) runningPositionByDriverId.set(driverId, fd.runningPosition);
+  }
+
   const byDriverId = new Map<string, { basePoints: number; runningPosition?: number }>();
   for (const [vehicleNum, stagePts] of stagePointsByVehicle) {
     const driverId = resolveDriverIdFromVehicleNumber(vehicleNum, numberToDriverId);
-    if (driverId) byDriverId.set(driverId, { basePoints: stagePts });
-  }
-  for (const fd of feed.drivers) {
-    const driverId = resolveDriverIdFromVehicleNumber(fd.vehicleNumber, numberToDriverId);
-    if (driverId) {
-      const normalizedVehicleNum = fd.vehicleNumber.trim();
-      const numericVehicleNum = String(Number(fd.vehicleNumber));
-      const stagePts =
-        stagePointsByVehicle.get(normalizedVehicleNum) ??
-        stagePointsByVehicle.get(numericVehicleNum) ??
-        0;
-      byDriverId.set(driverId, {
-        basePoints: fd.basePoints + stagePts,
-        runningPosition: fd.runningPosition,
-      });
-    }
+    if (!driverId) continue;
+    byDriverId.set(driverId, {
+      basePoints: stagePts,
+      runningPosition: runningPositionByDriverId.get(driverId),
+    });
   }
 
   const drivers: RaceDriverPoints[] = Array.from(byDriverId.entries()).map(([driverId, { basePoints, runningPosition }]) =>
     runningPosition != null ? { driverId, basePoints, runningPosition } : { driverId, basePoints },
   );
   if (drivers.length === 0) {
-    return { updated: false, reason: "No drivers matched by car number between stage/feed and league." };
+    return { updated: false, reason: "No drivers matched by car number between stage data and league." };
   }
 
   const racePointsData: Record<string, unknown> = {

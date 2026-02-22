@@ -891,6 +891,12 @@ textarea {
   max-width: 85%;
 }
 
+.picks-tier-summary-row .picks-tier-position-inline {
+  display: inline-block;
+  margin-right: 0.25rem;
+  color: var(--text);
+}
+
 .picks-tier-summary-row .driver-team {
   font-weight: 400;
   font-size: 0.75rem;
@@ -922,32 +928,12 @@ textarea {
   color: var(--nascar-blue);
 }
 
-.picks-tier-summary-row .picks-tier-position {
-  flex-shrink: 0;
-  font-size: 0.75rem;
-  font-weight: 700;
-  min-width: 1.5rem;
-  text-align: center;
-}
-
 .picks-tier-summary-row .picks-tier-points {
   flex-shrink: 0;
   font-size: 0.78rem;
   font-weight: 800;
   min-width: 1.75rem;
   text-align: right;
-}
-
-.picks-tier-summary--yellow .picks-tier-position {
-  color: var(--nascar-yellow);
-}
-
-.picks-tier-summary--red .picks-tier-position {
-  color: var(--nascar-red);
-}
-
-.picks-tier-summary--blue .picks-tier-position {
-  color: var(--nascar-blue);
 }
 
 .picks-tier-summary--yellow .picks-tier-points {
@@ -1002,13 +988,36 @@ textarea {
 
 /* Live race (home during race) */
 .race-card--live {
-  position: relative;
-  padding-top: 2rem;
+  gap: 0.35rem;
+}
+.live-race-track-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+.live-race-track {
+  margin: 0;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.live-race-track-row .live-badge {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.live-race-progress {
+  margin: 0;
+}
+.live-link-refresh-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
 }
 .live-badge {
-  position: absolute;
-  top: 0.6rem;
-  right: 0.75rem;
+  display: inline-flex;
+  align-items: center;
   font-size: 0.7rem;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -1017,13 +1026,42 @@ textarea {
   padding: 0.2rem 0.5rem;
   border-radius: 4px;
 }
+.live-refresh-button {
+  border: 0;
+  background: var(--nascar-blue);
+  color: var(--nascar-white);
+  min-height: 0;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  box-shadow: none;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.live-link-refresh-row .live-refresh-button {
+  flex-shrink: 0;
+}
+.live-refresh-button:hover:enabled {
+  transform: none;
+  filter: none;
+}
+.live-refresh-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.live-refresh-feedback {
+  margin: 0;
+}
 .live-leaderboard-link {
-  display: inline-block;
-  margin-top: 0.5rem;
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: 0.875rem;
   font-weight: 600;
-  color: var(--nascar-blue);
+  color: var(--nascar-yellow);
   text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .live-leaderboard-link:hover {
   text-decoration: underline;
@@ -1043,18 +1081,72 @@ textarea {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.35rem 0;
+  padding: 0.35rem 0.4rem;
   border-bottom: 1px solid var(--line);
 }
 .live-driver-points-row:last-child,
 .live-standings-row:last-child .live-standings-row-header {
   border-bottom: none;
 }
-.live-driver-points-name,
+
+.live-driver-points-row--yellow,
+.live-driver-points-row--red,
+.live-driver-points-row--blue {
+  border-radius: 8px;
+}
+
+.live-driver-points-row--yellow {
+  background: color-mix(in srgb, var(--nascar-yellow) 26%, transparent);
+}
+
+.live-driver-points-row--red {
+  background: color-mix(in srgb, var(--nascar-red) 18%, transparent);
+}
+
+.live-driver-points-row--blue {
+  background: color-mix(in srgb, var(--nascar-blue) 18%, transparent);
+}
+
+.live-driver-points-row--yellow .live-driver-points-pts {
+  color: color-mix(in srgb, var(--nascar-yellow) 76%, var(--text));
+}
+
+.live-driver-points-row--red .live-driver-points-pts {
+  color: color-mix(in srgb, var(--nascar-red) 78%, var(--text));
+}
+
+.live-driver-points-row--blue .live-driver-points-pts {
+  color: color-mix(in srgb, var(--nascar-blue) 78%, var(--text));
+}
+.live-driver-points-main {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.live-driver-points-pos {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--muted);
+  min-width: 2.1rem;
+}
+.live-driver-points-name {
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .live-standings-name {
   font-weight: 600;
 }
-.live-driver-points-pts,
+.live-driver-points-pts {
+  font-weight: 700;
+  color: var(--text);
+  min-width: 1.75rem;
+  text-align: right;
+}
+
 .live-standings-total {
   font-weight: 700;
   color: var(--nascar-blue);
@@ -1340,6 +1432,12 @@ textarea {
   max-width: 85%;
 }
 
+.tier-driver-position-inline {
+  display: inline-block;
+  margin-right: 0.25rem;
+  color: var(--text);
+}
+
 .tier-driver-team {
   font-weight: 400;
   font-size: 0.75rem;
@@ -1369,32 +1467,12 @@ textarea {
   color: var(--nascar-blue);
 }
 
-.tier-driver-position {
-  flex-shrink: 0;
-  font-size: 0.9rem;
-  font-weight: 700;
-  min-width: 1.5rem;
-  text-align: center;
-}
-
 .tier-driver-points {
   flex-shrink: 0;
   font-size: 0.9rem;
   font-weight: 800;
   min-width: 1.75rem;
   text-align: right;
-}
-
-.tier-card--yellow .tier-driver-position {
-  color: var(--nascar-yellow);
-}
-
-.tier-card--red .tier-driver-position {
-  color: var(--nascar-red);
-}
-
-.tier-card--blue .tier-driver-position {
-  color: var(--nascar-blue);
 }
 
 .tier-card--yellow .tier-driver-points {
@@ -1564,7 +1642,7 @@ textarea {
   padding: 0.25rem 0.5rem;
   border-radius: 10px;
   border: 2px solid transparent;
-  background: var(--panel-alt);
+  background: transparent;
   color: var(--text);
   font: inherit;
   text-align: left;
@@ -2056,7 +2134,7 @@ tbody tr:hover {
   grid-template-columns: 56px minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.5rem;
-  padding: 0 0 0.18rem;
+  padding: 0 0.4rem 0.18rem;
   border-bottom: 1px solid var(--line);
   margin-bottom: 0.2rem;
 }
@@ -2080,7 +2158,7 @@ tbody tr:hover {
   padding: 0.45rem 0.55rem;
   border-radius: 8px;
   border: 1px solid var(--line);
-  background: var(--panel-alt);
+  background: transparent;
   color: var(--text);
   text-align: left;
   font: inherit;
@@ -2089,7 +2167,7 @@ tbody tr:hover {
 }
 
 .race-leaderboard-trigger:hover {
-  background: color-mix(in srgb, var(--nascar-blue) 10%, var(--panel-alt));
+  background: color-mix(in srgb, var(--nascar-blue) 10%, transparent);
   border-color: color-mix(in srgb, var(--nascar-blue) 30%, var(--line));
 }
 
@@ -2135,7 +2213,37 @@ tbody tr:hover {
   grid-template-columns: 56px minmax(0, 1fr) auto;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.15rem 0;
+  padding: 0.2rem 0.4rem;
+}
+
+.race-result-item--yellow,
+.race-result-item--red,
+.race-result-item--blue {
+  border-radius: 8px;
+}
+
+.race-result-item--yellow {
+  background: color-mix(in srgb, var(--nascar-yellow) 26%, transparent);
+}
+
+.race-result-item--red {
+  background: color-mix(in srgb, var(--nascar-red) 18%, transparent);
+}
+
+.race-result-item--blue {
+  background: color-mix(in srgb, var(--nascar-blue) 18%, transparent);
+}
+
+.race-result-item--yellow .race-result-pts {
+  color: color-mix(in srgb, var(--nascar-yellow) 76%, var(--text));
+}
+
+.race-result-item--red .race-result-pts {
+  color: color-mix(in srgb, var(--nascar-red) 78%, var(--text));
+}
+
+.race-result-item--blue .race-result-pts {
+  color: color-mix(in srgb, var(--nascar-blue) 78%, var(--text));
 }
 
 .race-result-name {
@@ -2161,6 +2269,9 @@ tbody tr:hover {
 .race-result-pts {
   font-size: 0.94rem;
   font-weight: 700;
+  color: var(--text);
+  min-width: 1.75rem;
+  text-align: right;
 }
 
 .race-results-layout {
