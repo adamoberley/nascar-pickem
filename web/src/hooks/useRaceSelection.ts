@@ -4,7 +4,7 @@ import { nextDay10pmEasternMs } from "../lib/time";
 
 export function useRaceSelection(
   races: Array<RaceDoc & { id: string }>,
-  isAdmin: boolean,
+  _isAdmin: boolean,
 ) {
   const upcomingRace = useMemo(() => {
     const now = Date.now();
@@ -65,18 +65,45 @@ export function useRaceSelection(
   );
 
   const [selectedRaceId, setSelectedRaceId] = useState<string | null>(null);
+  const [autoFocusedRaceId, setAutoFocusedRaceId] = useState<string | null>(null);
+  const preferredRaceId = useMemo(() => {
+    if (liveRace) return liveRace.id;
+    if (inProgressScheduledRace) return inProgressScheduledRace.id;
+    if (latestCompletedRace) return latestCompletedRace.id;
+    if (upcomingRace) return upcomingRace.id;
+    return races[0]?.id ?? null;
+  }, [
+    inProgressScheduledRace?.id,
+    latestCompletedRace?.id,
+    liveRace?.id,
+    races,
+    upcomingRace?.id,
+  ]);
+
   useEffect(() => {
-    const defaultRaceId = primaryRace?.id ?? latestCompletedRace?.id ?? upcomingRace?.id ?? null;
     if (!selectedRaceId) {
-      setSelectedRaceId(defaultRaceId);
+      setSelectedRaceId(preferredRaceId);
+      setAutoFocusedRaceId(preferredRaceId);
       return;
     }
 
     const raceExists = races.some((race) => race.id === selectedRaceId);
     if (!raceExists) {
-      setSelectedRaceId(defaultRaceId);
+      setSelectedRaceId(preferredRaceId);
+      setAutoFocusedRaceId(preferredRaceId);
+      return;
     }
-  }, [primaryRace?.id, latestCompletedRace?.id, upcomingRace?.id, races, selectedRaceId]);
+
+    if (preferredRaceId && preferredRaceId !== autoFocusedRaceId) {
+      setSelectedRaceId(preferredRaceId);
+      setAutoFocusedRaceId(preferredRaceId);
+    }
+  }, [
+    autoFocusedRaceId,
+    preferredRaceId,
+    races,
+    selectedRaceId,
+  ]);
 
   const selectedRace = useMemo(
     () => (selectedRaceId ? (races.find((r) => r.id === selectedRaceId) ?? null) : null),

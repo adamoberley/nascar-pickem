@@ -102,7 +102,7 @@ Player features:
 - Home: next race, lock countdown, pick status
 - Picks: tiered selection with validation and save (frontend also hard-locks when lock time passes, even if backend lock is delayed)
 - Standings: season leaderboard, sprint (monthly segment) leaderboard, player weekly breakdown
-- Race: select any race to view results, your scored picks with adjusted tags, and live leaderboard during races
+- Race: select any race to view results (status badges: Live, Finished, Unofficial), your scored picks with adjusted tags, and live leaderboard during races
 
 Admin features:
 - League settings (name, season year, payout notes)

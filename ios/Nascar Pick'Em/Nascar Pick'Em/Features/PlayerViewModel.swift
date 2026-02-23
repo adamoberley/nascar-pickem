@@ -55,6 +55,7 @@ final class PlayerViewModel: ObservableObject {
     private var standingsSnapshotListener: ListenerRegistration?
     private var adjustmentsListener: ListenerRegistration?
     private var notificationsListener: ListenerRegistration?
+    private var autoFocusedRaceId: String?
 
     var currentUserId: String? {
         Auth.auth().currentUser?.uid
@@ -105,6 +106,22 @@ final class PlayerViewModel: ObservableObject {
         return upcomingRace
     }
 
+    private func preferredRaceId(in races: [RaceItem], now: Date = Date()) -> String? {
+        if let live = races.first(where: { $0.status == .locked }) {
+            return live.id
+        }
+        if let inProgressScheduled = races.first(where: { $0.status == .scheduled && $0.lockTime <= now }) {
+            return inProgressScheduled.id
+        }
+        if let latestCompleted = races.last(where: { $0.status == .completed }) {
+            return latestCompleted.id
+        }
+        if let upcoming = races.first(where: { $0.status == .scheduled && $0.lockTime.timeIntervalSince(now) > 0 }) {
+            return upcoming.id
+        }
+        return races.first?.id
+    }
+
     /// Live weekly scores for the current live race (sorted by weeklyTotal desc).
     var liveWeeklyScores: [WeeklyScoreItem] {
         guard let raceId = effectiveLiveRace?.id else { return [] }
@@ -149,6 +166,11 @@ final class PlayerViewModel: ObservableObject {
         return map
     }
 
+    /// Consider results final when a substantial set of mapped finish positions is present.
+    var selectedRaceHasFinalResults: Bool {
+        selectedRacePointsDocument.drivers.filter { $0.finishPosition != nil }.count >= 20
+    }
+
     /// Selected race results with adjustments applied (driverId -> final points).
     var selectedRacePointsWithAdjustments: [(String, Int)] {
         let adjByDriver = Dictionary(selectedRaceAdjustments.map { ($0.driverId, $0.deltaPoints) }, uniquingKeysWith: +)
@@ -175,7 +197,8 @@ final class PlayerViewModel: ObservableObject {
 
     var selectedRace: RaceItem? {
         guard let selectedRaceId else {
-            return races.last(where: { $0.status == .completed }) ?? upcomingRace
+            guard let preferredRaceId = preferredRaceId(in: races) else { return nil }
+            return races.first(where: { $0.id == preferredRaceId })
         }
         return races.first(where: { $0.id == selectedRaceId })
     }
@@ -257,6 +280,8 @@ final class PlayerViewModel: ObservableObject {
 
         selectedLeague = pair.0
         selectedMember = pair.1
+        selectedRaceId = nil
+        autoFocusedRaceId = nil
 
         listeners.append(repository.observeLeague(leagueId: leagueId) { [weak self] league in
             guard let self, let league else { return }
@@ -271,8 +296,19 @@ final class PlayerViewModel: ObservableObject {
         listeners.append(repository.observeRaces(leagueId: leagueId) { [weak self] races in
             guard let self else { return }
             self.races = races
-            if self.selectedRaceId == nil {
-                self.selectedRaceId = races.last(where: { $0.status == .completed })?.id ?? races.first?.id
+
+            let preferredRaceId = self.preferredRaceId(in: races)
+            let selectedRaceIsMissing = self.selectedRaceId.flatMap { selectedId in
+                races.first(where: { $0.id == selectedId })
+            } == nil
+
+            if self.selectedRaceId == nil || selectedRaceIsMissing {
+                self.selectedRaceId = preferredRaceId
+                self.autoFocusedRaceId = preferredRaceId
+            } else if preferredRaceId != nil, preferredRaceId != self.autoFocusedRaceId {
+                // Race state advanced (e.g., live -> completed), so follow the new race.
+                self.selectedRaceId = preferredRaceId
+                self.autoFocusedRaceId = preferredRaceId
             }
             self.observeTierAndPick()
             self.observeSelectedRaceDetails()
@@ -669,5 +705,6 @@ final class PlayerViewModel: ObservableObject {
         standingsSnapshotListener = nil
         adjustmentsListener = nil
         notificationsListener = nil
+        autoFocusedRaceId = nil
     }
 }

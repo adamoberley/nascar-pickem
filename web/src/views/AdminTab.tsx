@@ -84,63 +84,67 @@ export function AdminTab({
       <h2>Admin Dashboard</h2>
 
       <article className="callout">
-        <h4>League Settings</h4>
-        <form
-          className="stack-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!selectedLeagueId) return;
+        <details className="admin-callout-dropdown">
+          <summary className="admin-callout-summary">
+            <h4>League Settings</h4>
+          </summary>
+          <form
+            className="stack-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!selectedLeagueId) return;
 
-            setAdminBusy(true);
-            setAdminError(null);
-            setAdminMessage("");
+              setAdminBusy(true);
+              setAdminError(null);
+              setAdminMessage("");
 
-            void setLeagueSettings(selectedLeagueId, settingsDraft)
-              .then(() => setAdminMessage("League settings saved."))
-              .catch((error) => setAdminError((error as Error).message))
-              .finally(() => setAdminBusy(false));
-          }}
-        >
-          <label htmlFor="admin-league-name">League Name</label>
-          <input
-            id="admin-league-name"
-            value={settingsDraft.name}
-            onChange={(event) =>
-              setSettingsDraft((current) => ({ ...current, name: event.target.value }))
-            }
-            placeholder="League Name"
-            required
-          />
-          <label htmlFor="admin-season-year">Season Year</label>
-          <input
-            id="admin-season-year"
-            type="number"
-            value={settingsDraft.seasonYear}
-            onChange={(event) =>
-              setSettingsDraft((current) => ({
-                ...current,
-                seasonYear: Number(event.target.value),
-              }))
-            }
-            required
-          />
-          <label htmlFor="admin-payout-config">Payout Notes (Optional)</label>
-          <textarea
-            id="admin-payout-config"
-            rows={4}
-            value={settingsDraft.payoutConfigText}
-            onChange={(event) =>
-              setSettingsDraft((current) => ({
-                ...current,
-                payoutConfigText: event.target.value,
-              }))
-            }
-            placeholder="1st: $1,000 · 2nd: $250"
-          />
-          <button type="submit" disabled={adminBusy}>
-            Save Settings
-          </button>
-        </form>
+              void setLeagueSettings(selectedLeagueId, settingsDraft)
+                .then(() => setAdminMessage("League settings saved."))
+                .catch((error) => setAdminError((error as Error).message))
+                .finally(() => setAdminBusy(false));
+            }}
+          >
+            <label htmlFor="admin-league-name">League Name</label>
+            <input
+              id="admin-league-name"
+              value={settingsDraft.name}
+              onChange={(event) =>
+                setSettingsDraft((current) => ({ ...current, name: event.target.value }))
+              }
+              placeholder="League Name"
+              required
+            />
+            <label htmlFor="admin-season-year">Season Year</label>
+            <input
+              id="admin-season-year"
+              type="number"
+              value={settingsDraft.seasonYear}
+              onChange={(event) =>
+                setSettingsDraft((current) => ({
+                  ...current,
+                  seasonYear: Number(event.target.value),
+                }))
+              }
+              required
+            />
+            <label htmlFor="admin-payout-config">Payout Notes (Optional)</label>
+            <textarea
+              id="admin-payout-config"
+              rows={4}
+              value={settingsDraft.payoutConfigText}
+              onChange={(event) =>
+                setSettingsDraft((current) => ({
+                  ...current,
+                  payoutConfigText: event.target.value,
+                }))
+              }
+              placeholder="1st: $1,000 · 2nd: $250"
+            />
+            <button type="submit" disabled={adminBusy}>
+              Save Settings
+            </button>
+          </form>
+        </details>
       </article>
 
       <article className="callout">
@@ -305,163 +309,171 @@ export function AdminTab({
           </button>
         </div>
 
-        <form
-          className="stack-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!selectedLeagueId) return;
+        <details className="admin-callout-dropdown">
+          <summary className="admin-callout-summary">
+            <h5>Add Penalty / Correction</h5>
+          </summary>
+          <form
+            className="stack-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!selectedLeagueId) return;
 
-            setAdminBusy(true);
-            setAdminError(null);
-            setAdminMessage("");
+              setAdminBusy(true);
+              setAdminError(null);
+              setAdminMessage("");
 
-            void addAdjustment({
-              leagueId: selectedLeagueId,
-              raceId: adjustmentDraft.raceId,
-              driverId: adjustmentDraft.driverId,
-              type: adjustmentDraft.type,
-              deltaPoints: adjustmentDraft.deltaPoints,
-              reason: adjustmentDraft.reason,
-              source: adjustmentDraft.source,
-            })
-              .then(() => setAdminMessage("Adjustment added."))
-              .catch((error) => setAdminError((error as Error).message))
-              .finally(() => setAdminBusy(false));
-          }}
-        >
-          <h5>Add Penalty / Correction</h5>
-          <p className="form-hint">
-            Apply a points adjustment to one driver for a specific race (e.g. penalty −10,
-            or a correction to fix a scoring error).
-          </p>
-          <label>
-            <span className="label-text">Race</span>
-            <select
-              value={adjustmentDraft.raceId}
-              onChange={(event) =>
-                setAdjustmentDraft((current) => ({ ...current, raceId: event.target.value }))
-              }
-              required
-            >
-              <option value="">— Select race —</option>
-              {races.map((race) => (
-                <option key={race.id} value={race.id}>
-                  {race.name} · {race.track}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span className="label-text">Driver</span>
-            <select
-              value={adjustmentDraft.driverId}
-              onChange={(event) =>
-                setAdjustmentDraft((current) => ({ ...current, driverId: event.target.value }))
-              }
-              required
-            >
-              <option value="">— Select driver —</option>
-              {driversState.data.map((d) => (
-                <option key={d.id} value={d.id}>
-                  #{d.number} {d.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span className="label-text">Type</span>
-            <select
-              value={adjustmentDraft.type}
-              onChange={(event) =>
-                setAdjustmentDraft((current) => ({
-                  ...current,
-                  type: event.target.value as "penalty" | "correction",
-                }))
-              }
-            >
-              <option value="penalty">Penalty</option>
-              <option value="correction">Correction</option>
-            </select>
-          </label>
-          <label>
-            <span className="label-text">Points change</span>
-            <input
-              type="number"
-              value={adjustmentDraft.deltaPoints}
-              onChange={(event) =>
-                setAdjustmentDraft((current) => ({
-                  ...current,
-                  deltaPoints: Number(event.target.value),
-                }))
-              }
-              placeholder="-10"
-              title="Negative = deduction, positive = addition"
-            />
-            <span className="input-hint">Negative = deduction, positive = addition</span>
-          </label>
-          <label>
-            <span className="label-text">Reason</span>
-            <input
-              value={adjustmentDraft.reason}
-              onChange={(event) =>
-                setAdjustmentDraft((current) => ({ ...current, reason: event.target.value }))
-              }
-              placeholder="e.g. Post-race penalty"
-              required
-            />
-          </label>
-          <button type="submit" disabled={adminBusy}>
-            Add Adjustment
-          </button>
-        </form>
+              void addAdjustment({
+                leagueId: selectedLeagueId,
+                raceId: adjustmentDraft.raceId,
+                driverId: adjustmentDraft.driverId,
+                type: adjustmentDraft.type,
+                deltaPoints: adjustmentDraft.deltaPoints,
+                reason: adjustmentDraft.reason,
+                source: adjustmentDraft.source,
+              })
+                .then(() => setAdminMessage("Adjustment added."))
+                .catch((error) => setAdminError((error as Error).message))
+                .finally(() => setAdminBusy(false));
+            }}
+          >
+            <p className="form-hint">
+              Apply a points adjustment to one driver for a specific race (e.g. penalty −10,
+              or a correction to fix a scoring error).
+            </p>
+            <label>
+              <span className="label-text">Race</span>
+              <select
+                value={adjustmentDraft.raceId}
+                onChange={(event) =>
+                  setAdjustmentDraft((current) => ({ ...current, raceId: event.target.value }))
+                }
+                required
+              >
+                <option value="">— Select race —</option>
+                {races.map((race) => (
+                  <option key={race.id} value={race.id}>
+                    {race.name} · {race.track}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span className="label-text">Driver</span>
+              <select
+                value={adjustmentDraft.driverId}
+                onChange={(event) =>
+                  setAdjustmentDraft((current) => ({ ...current, driverId: event.target.value }))
+                }
+                required
+              >
+                <option value="">— Select driver —</option>
+                {driversState.data.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    #{d.number} {d.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span className="label-text">Type</span>
+              <select
+                value={adjustmentDraft.type}
+                onChange={(event) =>
+                  setAdjustmentDraft((current) => ({
+                    ...current,
+                    type: event.target.value as "penalty" | "correction",
+                  }))
+                }
+              >
+                <option value="penalty">Penalty</option>
+                <option value="correction">Correction</option>
+              </select>
+            </label>
+            <label>
+              <span className="label-text">Points change</span>
+              <input
+                type="number"
+                value={adjustmentDraft.deltaPoints}
+                onChange={(event) =>
+                  setAdjustmentDraft((current) => ({
+                    ...current,
+                    deltaPoints: Number(event.target.value),
+                  }))
+                }
+                placeholder="-10"
+                title="Negative = deduction, positive = addition"
+              />
+              <span className="input-hint">Negative = deduction, positive = addition</span>
+            </label>
+            <label>
+              <span className="label-text">Reason</span>
+              <input
+                value={adjustmentDraft.reason}
+                onChange={(event) =>
+                  setAdjustmentDraft((current) => ({ ...current, reason: event.target.value }))
+                }
+                placeholder="e.g. Post-race penalty"
+                required
+              />
+            </label>
+            <button type="submit" disabled={adminBusy}>
+              Add Adjustment
+            </button>
+          </form>
+        </details>
       </article>
 
       <article className="callout">
-        <h4>Members</h4>
-        <div className="table-scroll">
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Role</th>
-                <th>Paid</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {membersState.data.map((member) => (
-                <tr key={member.id}>
-                  <td>{member.displayName}</td>
-                  <td>{member.role}</td>
-                  <td>{member.paidStatus}</td>
-                  <td>
-                    <button
-                      type="button"
-                      className="small-button"
-                      onClick={() => {
-                        if (!selectedLeagueId) return;
-                        const nextPaidStatus = member.paidStatus === "paid" ? "unpaid" : "paid";
-                        setAdminBusy(true);
-                        setAdminError(null);
-                        setAdminMessage("");
-                        void setMemberPaidStatus(
-                          selectedLeagueId,
-                          member.id,
-                          nextPaidStatus,
-                        )
-                          .then(() => setAdminMessage(`Marked ${member.displayName} as ${nextPaidStatus}.`))
-                          .catch((error) => setAdminError((error as Error).message))
-                          .finally(() => setAdminBusy(false));
-                      }}
-                    >
-                      Toggle Paid
-                    </button>
-                  </td>
+        <details className="admin-callout-dropdown">
+          <summary className="admin-callout-summary">
+            <h4>Members</h4>
+          </summary>
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Role</th>
+                  <th>Paid</th>
+                  <th>Action</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {membersState.data.map((member) => (
+                  <tr key={member.id}>
+                    <td>{member.displayName}</td>
+                    <td>{member.role}</td>
+                    <td>{member.paidStatus}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="small-button"
+                        onClick={() => {
+                          if (!selectedLeagueId) return;
+                          const nextPaidStatus = member.paidStatus === "paid" ? "unpaid" : "paid";
+                          setAdminBusy(true);
+                          setAdminError(null);
+                          setAdminMessage("");
+                          void setMemberPaidStatus(
+                            selectedLeagueId,
+                            member.id,
+                            nextPaidStatus,
+                          )
+                            .then(() => setAdminMessage(`Marked ${member.displayName} as ${nextPaidStatus}.`))
+                            .catch((error) => setAdminError((error as Error).message))
+                            .finally(() => setAdminBusy(false));
+                        }}
+                      >
+                        Toggle Paid
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
       </article>
 
       {adminMessage ? <p className="success-text">{adminMessage}</p> : null}

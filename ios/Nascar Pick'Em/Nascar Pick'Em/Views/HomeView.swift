@@ -50,13 +50,67 @@ struct HomeView: View {
         viewModel.notifications.filter { !$0.isRead }
     }
 
-    private var liveDriverPointRows: [LiveDriverPointRow] {
-        viewModel.liveRacePointsByDriverId
+    private var homeRace: RaceItem? {
+        viewModel.primaryRace
+    }
+
+    private var isShowingLiveRaceOnHome: Bool {
+        guard let homeRace else { return false }
+        return viewModel.effectiveLiveRace?.id == homeRace.id
+    }
+
+    private var homeRacePointsByDriverId: [String: Int] {
+        if isShowingLiveRaceOnHome {
+            return viewModel.liveRacePointsByDriverId
+        }
+        guard homeRace?.id == viewModel.selectedRaceId else { return [:] }
+        return Dictionary(viewModel.selectedRacePointsWithAdjustments, uniquingKeysWith: { current, _ in current })
+    }
+
+    private var homeRacePositionByDriverId: [String: Int] {
+        if isShowingLiveRaceOnHome {
+            return viewModel.driverPositionByDriverId
+        }
+        guard homeRace?.id == viewModel.selectedRaceId else { return [:] }
+        return viewModel.selectedRacePositionByDriverId
+    }
+
+    private var homeRaceHasFinalResults: Bool {
+        guard !isShowingLiveRaceOnHome, homeRace?.id == viewModel.selectedRaceId else { return false }
+        return viewModel.selectedRaceHasFinalResults
+    }
+
+    private var homeRaceCanSeeAllPicks: Bool {
+        if isShowingLiveRaceOnHome {
+            return viewModel.canSeeAllLiveRacePicks
+        }
+        guard homeRace?.id == viewModel.selectedRaceId else { return false }
+        return viewModel.canSeeAllPicksForSelectedRace
+    }
+
+    private var homeRacePicks: [PickItem] {
+        if isShowingLiveRaceOnHome {
+            return viewModel.liveRacePicks
+        }
+        guard homeRace?.id == viewModel.selectedRaceId else { return [] }
+        return viewModel.selectedRacePicks
+    }
+
+    private var homeRaceWeeklyScores: [WeeklyScoreItem] {
+        if isShowingLiveRaceOnHome {
+            return viewModel.liveWeeklyScores
+        }
+        guard homeRace?.id == viewModel.selectedRaceId else { return [] }
+        return viewModel.selectedRaceWeeklyScores
+    }
+
+    private var homeDriverPointRows: [LiveDriverPointRow] {
+        homeRacePointsByDriverId
             .map { driverId, points in
                 LiveDriverPointRow(
                     driverId: driverId,
                     points: points,
-                    position: viewModel.driverPositionByDriverId[driverId]
+                    position: homeRacePositionByDriverId[driverId]
                 )
             }
             .sorted { lhs, rhs in
@@ -70,17 +124,17 @@ struct HomeView: View {
             }
     }
 
-    private var liveRaceLeaderboardRows: [LiveLeaderboardRow] {
-        guard viewModel.canSeeAllLiveRacePicks else { return [] }
+    private var homeRaceLeaderboardRows: [LiveLeaderboardRow] {
+        guard homeRaceCanSeeAllPicks else { return [] }
 
         var userIds = Set<String>()
         viewModel.members.forEach { userIds.insert($0.id) }
-        viewModel.liveRacePicks.forEach { userIds.insert($0.userId) }
-        viewModel.liveWeeklyScores.forEach { userIds.insert($0.userId) }
+        homeRacePicks.forEach { userIds.insert($0.userId) }
+        homeRaceWeeklyScores.forEach { userIds.insert($0.userId) }
 
-        let pointsByDriverId = viewModel.liveRacePointsByDriverId
-        let pickByUserId = Dictionary(uniqueKeysWithValues: viewModel.liveRacePicks.map { ($0.userId, $0) })
-        let scoreByUserId = Dictionary(uniqueKeysWithValues: viewModel.liveWeeklyScores.map { ($0.userId, $0) })
+        let pointsByDriverId = homeRacePointsByDriverId
+        let pickByUserId = Dictionary(uniqueKeysWithValues: homeRacePicks.map { ($0.userId, $0) })
+        let scoreByUserId = Dictionary(uniqueKeysWithValues: homeRaceWeeklyScores.map { ($0.userId, $0) })
 
         let rows = userIds.map { userId -> LiveLeaderboardRow in
             let pick = pickByUserId[userId]
@@ -261,18 +315,20 @@ struct HomeView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 14) {
-                    if let liveRace = viewModel.effectiveLiveRace {
-                        liveRaceCard(liveRace: liveRace)
-
-                        if !liveDriverPointRows.isEmpty {
-                            liveDriverPointsCard
+                    if let homeRace,
+                       isShowingLiveRaceOnHome || homeRace.status == .completed {
+                        if isShowingLiveRaceOnHome {
+                            liveRaceCard(liveRace: homeRace)
+                        } else {
+                            raceCard(race: homeRace, showFinalBadge: homeRaceHasFinalResults)
                         }
 
-                        liveRaceLeaderboardCard
-
-                        if viewModel.primaryRace != nil {
-                            yourPicksCard
+                        if !homeDriverPointRows.isEmpty {
+                            homeRaceResultsCard
                         }
+
+                        homeRaceLeaderboardCard
+                        yourPicksCard
 
                         if !unreadNotifications.isEmpty {
                             remindersCard
@@ -282,8 +338,8 @@ struct HomeView: View {
                             remindersCard
                         }
 
-                        if let primaryRace = viewModel.primaryRace {
-                            raceCard(race: primaryRace)
+                        if let homeRace {
+                            raceCard(race: homeRace, showFinalBadge: false)
                             yourPicksCard
                         } else {
                             Text("No upcoming race loaded.")
@@ -298,7 +354,7 @@ struct HomeView: View {
             }
             .appScreenBackground()
             .toolbar(.hidden, for: .navigationBar)
-            .onChange(of: viewModel.effectiveLiveRace?.id) { _, _ in
+            .onChange(of: homeRace?.id) { _, _ in
                 expandedLiveLeaderboardUserId = viewModel.currentUserId
                 liveRefreshBusy = false
                 liveRefreshUpdated = false
@@ -389,7 +445,7 @@ struct HomeView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Spacer(minLength: 0)
-                Text("LIVE")
+                Label("LIVE", systemImage: "car.fill")
                     .font(NASCARTheme.textFont(size: 12, weight: .bold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 8)
@@ -460,25 +516,25 @@ struct HomeView: View {
         }
     }
 
-    private var liveRaceLeaderboardCard: some View {
+    private var homeRaceLeaderboardCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Live Leaderboard")
+            Text("Race Leaderboard")
                 .font(NASCARTheme.displayFont(size: 20, weight: .bold))
                 .textCase(.uppercase)
 
-            if !viewModel.canSeeAllLiveRacePicks {
+            if !homeRaceCanSeeAllPicks {
                 Text("All picks become visible when the race starts.")
                     .font(NASCARTheme.textFont(size: 15))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
-            } else if liveRaceLeaderboardRows.isEmpty {
+            } else if homeRaceLeaderboardRows.isEmpty {
                 Text("No picks submitted for this race yet.")
                     .font(NASCARTheme.textFont(size: 15))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 VStack(alignment: .leading, spacing: 8) {
-                    ForEach(Array(liveRaceLeaderboardRows.enumerated()), id: \.element.id) { index, row in
+                    ForEach(Array(homeRaceLeaderboardRows.enumerated()), id: \.element.id) { index, row in
                         let isExpanded = expandedLiveLeaderboardUserId == row.id
                         VStack(alignment: .leading, spacing: 6) {
                             Button {
@@ -504,9 +560,24 @@ struct HomeView: View {
 
                             if isExpanded {
                                 if let pick = row.pick {
-                                    leaderboardPicksSummary(title: "Tier A", ids: pick.tierA, color: NASCARTheme.yellow)
-                                    leaderboardPicksSummary(title: "Tier B", ids: pick.tierB, color: NASCARTheme.red)
-                                    leaderboardPicksSummary(title: "Tier C", ids: pick.tierC, color: NASCARTheme.blue)
+                                    leaderboardPicksSummary(
+                                        title: "Tier A",
+                                        ids: pick.tierA,
+                                        positionByDriverId: homeRacePositionByDriverId,
+                                        pointsByDriverId: homeRacePointsByDriverId
+                                    )
+                                    leaderboardPicksSummary(
+                                        title: "Tier B",
+                                        ids: pick.tierB,
+                                        positionByDriverId: homeRacePositionByDriverId,
+                                        pointsByDriverId: homeRacePointsByDriverId
+                                    )
+                                    leaderboardPicksSummary(
+                                        title: "Tier C",
+                                        ids: pick.tierC,
+                                        positionByDriverId: homeRacePositionByDriverId,
+                                        pointsByDriverId: homeRacePointsByDriverId
+                                    )
                                 } else {
                                     Text("No pick submitted for this race.")
                                         .font(NASCARTheme.textFont(size: 13))
@@ -528,13 +599,13 @@ struct HomeView: View {
         .appCard()
     }
 
-    private var liveDriverPointsCard: some View {
+    private var homeRaceResultsCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Live results")
+            Text(isShowingLiveRaceOnHome ? "Live Results" : (homeRaceHasFinalResults ? "Race Results" : "Race Results (Unofficial)"))
                 .font(NASCARTheme.displayFont(size: 20, weight: .bold))
                 .textCase(.uppercase)
             VStack(alignment: .leading, spacing: 6) {
-                ForEach(liveDriverPointRows) { entry in
+                ForEach(homeDriverPointRows) { entry in
                     let driver = resolvedDriver(forLookupKey: entry.driverId)
                     let pickedTier = currentUserTier(forDriverKey: entry.driverId)
                     let highlightColor = pickedTier?.color
@@ -568,19 +639,33 @@ struct HomeView: View {
         .appCard()
     }
 
-    private func raceCard(race: RaceItem) -> some View {
+    private func raceCard(race: RaceItem, showFinalBadge: Bool) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             VStack(alignment: .leading, spacing: 1) {
                 Text(race.name)
                     .font(NASCARTheme.raceNameFont(size: 28, weight: .bold))
                     .textCase(.uppercase)
-                Text(race.track)
-                    .font(NASCARTheme.textFont(size: 16))
-                    .foregroundStyle(.secondary)
+                HStack(alignment: .center, spacing: 8) {
+                    Text(race.track)
+                        .font(NASCARTheme.textFont(size: 16))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    if race.status == .completed {
+                        Label(showFinalBadge ? "FINISHED" : "UNOFFICIAL", systemImage: "car.fill")
+                            .font(NASCARTheme.textFont(size: 12, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Capsule().fill(showFinalBadge ? NASCARTheme.blue : NASCARTheme.yellow))
+                    }
+                }
                 Text("\(race.startTime.formatted(date: .abbreviated, time: .omitted)) – \(race.startTime.formatted(date: .omitted, time: .shortened))\(race.tvChannel.map { " · \($0)" } ?? "")")
                     .font(NASCARTheme.textFont(size: 15))
-                lockCountdown(lockDate: race.lockTime)
-                    .padding(.top, 8)
+                if race.status != .completed {
+                    lockCountdown(lockDate: race.lockTime)
+                        .padding(.top, 8)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -608,8 +693,8 @@ struct HomeView: View {
                             title: "Tier A",
                             driverIds: pick.tierA,
                             tierColor: NASCARTheme.yellow,
-                            positionByDriverId: viewModel.driverPositionByDriverId,
-                            pointsByDriverId: viewModel.liveRacePointsByDriverId
+                            positionByDriverId: homeRacePositionByDriverId,
+                            pointsByDriverId: homeRacePointsByDriverId
                         )
                     }
                     if !pick.tierB.isEmpty {
@@ -617,8 +702,8 @@ struct HomeView: View {
                             title: "Tier B",
                             driverIds: pick.tierB,
                             tierColor: NASCARTheme.red,
-                            positionByDriverId: viewModel.driverPositionByDriverId,
-                            pointsByDriverId: viewModel.liveRacePointsByDriverId
+                            positionByDriverId: homeRacePositionByDriverId,
+                            pointsByDriverId: homeRacePointsByDriverId
                         )
                     }
                     if !pick.tierC.isEmpty {
@@ -626,8 +711,8 @@ struct HomeView: View {
                             title: "Tier C",
                             driverIds: pick.tierC,
                             tierColor: NASCARTheme.blue,
-                            positionByDriverId: viewModel.driverPositionByDriverId,
-                            pointsByDriverId: viewModel.liveRacePointsByDriverId
+                            positionByDriverId: homeRacePositionByDriverId,
+                            pointsByDriverId: homeRacePointsByDriverId
                         )
                     }
                 } else {
@@ -635,7 +720,7 @@ struct HomeView: View {
                         Image(systemName: "checklist")
                             .font(.system(size: 18))
                             .foregroundStyle(.secondary)
-                        Text(viewModel.effectiveLiveRace != nil ? "No picks for this race." : "No picks selected — tap to make your picks")
+                        Text(isShowingLiveRaceOnHome || homeRace?.status == .completed ? "No picks for this race." : "No picks selected — tap to make your picks")
                             .font(NASCARTheme.textFont(size: 15))
                             .foregroundStyle(.secondary)
                     }
@@ -649,14 +734,19 @@ struct HomeView: View {
         .appCard()
     }
 
-    private func leaderboardPicksSummary(title: String, ids: [String], color _: Color) -> some View {
+    private func leaderboardPicksSummary(
+        title: String,
+        ids: [String],
+        positionByDriverId: [String: Int],
+        pointsByDriverId: [String: Int]
+    ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
                 .font(NASCARTheme.textFont(size: 12, weight: .bold))
                 .foregroundStyle(.primary)
             ForEach(ids, id: \.self) { driverId in
                 let driver = viewModel.driversById[driverId]
-                let position = viewModel.driverPositionByDriverId[driverId]
+                let position = positionByDriverId[driverId]
                 let pickedTier = currentUserTier(forDriverKey: driverId)
                 let highlightColor = pickedTier?.color
                 HStack(spacing: 6) {
@@ -676,7 +766,7 @@ struct HomeView: View {
                             .lineLimit(1)
                     }
                     Spacer()
-                    if let points = viewModel.liveRacePointsByDriverId[driverId] {
+                    if let points = pointsByDriverId[driverId] {
                         Text("\(points)")
                             .font(NASCARTheme.textFont(size: 13, weight: .bold))
                             .foregroundStyle(.primary)

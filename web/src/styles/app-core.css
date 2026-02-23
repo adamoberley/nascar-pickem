@@ -1002,7 +1002,7 @@ textarea {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.live-race-track-row .live-badge {
+.live-race-track-row .race-status-badge {
   margin-left: auto;
   flex-shrink: 0;
 }
@@ -1025,6 +1025,38 @@ textarea {
   background: var(--nascar-red);
   padding: 0.2rem 0.5rem;
   border-radius: 4px;
+}
+
+.race-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--nascar-white);
+  background: var(--nascar-red);
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+}
+
+.race-status-badge-icon {
+  width: 0.82rem;
+  height: 0.82rem;
+  display: block;
+}
+
+.race-status-badge--live {
+  background: var(--nascar-red);
+}
+
+.race-status-badge--finished {
+  background: var(--nascar-blue);
+}
+
+.race-status-badge--unofficial {
+  background: var(--nascar-yellow);
+  color: var(--nascar-black);
 }
 .live-refresh-button {
   border: 0;
@@ -1220,6 +1252,25 @@ textarea {
   background: var(--panel-alt);
   display: grid;
   gap: 0.55rem;
+}
+
+.admin-callout-dropdown {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.admin-callout-summary {
+  cursor: pointer;
+}
+
+.admin-callout-summary h4 {
+  display: inline;
+  margin: 0;
+}
+
+.admin-callout-summary h5 {
+  display: inline;
+  margin: 0;
 }
 
 .admin-heading-meta {
@@ -1927,6 +1978,24 @@ tbody tr:hover {
   font-size: 1rem;
   color: var(--muted);
   margin-top: 0.25rem;
+}
+
+.race-status-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.race-status-track {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.race-status-row .race-status-badge {
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .race-select-native {

@@ -19,8 +19,8 @@
 3. If points are wrong/missing:
    - Use Manual Results Override
 4. If a penalty/correction is announced later:
-- Add adjustment
-- Scores and ranks update automatically
+   - Add adjustment
+   - Scores and ranks update automatically
 
 ## Sprint (segment) leaderboard
 

@@ -28,7 +28,7 @@ Purpose: keep coding sessions fast, targeted, and low-token in this repo.
 - Picks flow (web):  
   `web/src/hooks/usePickDraft.ts`, `web/src/views/PicksTab.tsx`, `functions/src/index.ts`, `functions/src/pick-validation.ts`
 - Race/standings display (web):  
-  `web/src/views/RaceTab.tsx`, `web/src/views/StandingsTab.tsx`, `web/src/lib/race-points.ts`
+  `web/src/views/RaceTab.tsx`, `web/src/views/StandingsTab.tsx`, `web/src/hooks/useRaceSelection.ts`, `web/src/lib/race-points.ts`
 - Admin actions (web):  
   `web/src/views/AdminTab.tsx`, `web/src/lib/api.ts`, `functions/src/index.ts`
 - Ingest/live scoring (backend):  

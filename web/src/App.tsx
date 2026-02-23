@@ -204,25 +204,6 @@ export default function App() {
     () => [...racesState.data].sort((a, b) => a.startTime.toMillis() - b.startTime.toMillis()),
     [racesState.data],
   );
-  const latestRaceWithDriverDataId = useMemo(() => {
-    if (races.length === 0) return null;
-
-    const raceIdsWithDriverData = new Set(
-      racePointsSummaryState.data
-        .filter((racePoints) => {
-          const hasDrivers = Array.isArray(racePoints.drivers) && racePoints.drivers.length > 0;
-          const hasOfficialResults =
-            Array.isArray(racePoints.officialResults) && racePoints.officialResults.length > 0;
-          return hasDrivers || hasOfficialResults;
-        })
-        .map((racePoints) => racePoints.id),
-    );
-
-    const latestRaceWithData = [...races].reverse().find((race) =>
-      raceIdsWithDriverData.has(race.id),
-    );
-    return latestRaceWithData?.id ?? null;
-  }, [races, racePointsSummaryState.data]);
 
   const {
     upcomingRace,
@@ -235,31 +216,6 @@ export default function App() {
     selectedRace,
     canReadAllPicksForSelectedRace,
   } = useRaceSelection(races, isAdmin);
-
-  const [hasUserSelectedRace, setHasUserSelectedRace] = useState(false);
-  const setSelectedRaceFromUser = (value: string | null) => {
-    setHasUserSelectedRace(true);
-    setSelectedRaceId(value);
-  };
-
-  useEffect(() => {
-    setHasUserSelectedRace(false);
-  }, [selectedLeagueId]);
-
-  useEffect(() => {
-    if (hasUserSelectedRace) return;
-    const preferredRaceId = latestRaceWithDriverDataId ?? latestCompletedRace?.id ?? null;
-    if (!preferredRaceId) return;
-    if (selectedRaceId !== preferredRaceId) {
-      setSelectedRaceId(preferredRaceId);
-    }
-  }, [
-    hasUserSelectedRace,
-    latestCompletedRace?.id,
-    latestRaceWithDriverDataId,
-    selectedRaceId,
-    setSelectedRaceId,
-  ]);
 
   const selectedRaceTierState = useFirestoreDocument<TierDoc>(
     tab === "race" && selectedLeagueId && selectedRaceId
@@ -318,10 +274,6 @@ export default function App() {
       : null,
   );
 
-  const liveRacePointsState = useFirestoreDocument<RacePointsDoc>(
-    selectedLeagueId && effectiveLiveRace ? racePointsDocRef(selectedLeagueId, effectiveLiveRace.id) : null,
-  );
-
   /** Primary race's points doc. */
   const primaryRacePointsState = useFirestoreDocument<RacePointsDoc>(
     selectedLeagueId && primaryRace ? racePointsDocRef(selectedLeagueId, primaryRace.id) : null,
@@ -329,56 +281,58 @@ export default function App() {
 
   /** Race we treat as live for UI: locked or past-lock race only. */
   const liveRaceForDisplay = useMemo(() => effectiveLiveRace, [effectiveLiveRace]);
+  /** Race we show on Home: live/in-progress first, then just-completed, then next upcoming. */
+  const homeRaceForDisplay = useMemo(() => primaryRace ?? null, [primaryRace]);
 
-  /** Live race points to show for the race currently treated as live. */
-  const liveRacePointsForDisplay = useMemo(() => {
-    if (!liveRaceForDisplay) return null;
-    return liveRacePointsState.data;
-  }, [liveRaceForDisplay, liveRacePointsState.data]);
+  /** Home race points to show for the currently displayed home race. */
+  const homeRacePointsForDisplay = useMemo(() => {
+    if (!homeRaceForDisplay) return null;
+    return primaryRacePointsState.data;
+  }, [homeRaceForDisplay, primaryRacePointsState.data]);
 
   const liveWeeklyScoresQuery = useMemo<Query | null>(() => {
-    if (tab !== "home" || !selectedLeagueId || !liveRaceForDisplay) return null;
+    if (tab !== "home" || !selectedLeagueId || !homeRaceForDisplay) return null;
     return query(
       collection(db, "leagues", selectedLeagueId, "weeklyScores"),
-      where("raceId", "==", liveRaceForDisplay.id),
+      where("raceId", "==", homeRaceForDisplay.id),
       orderBy("weeklyTotal", "desc"),
     );
-  }, [liveRaceForDisplay?.id, selectedLeagueId, tab]);
+  }, [homeRaceForDisplay?.id, selectedLeagueId, tab]);
   const liveWeeklyScoresState = useFirestoreCollection<WeeklyScoreDoc>(liveWeeklyScoresQuery);
   const liveWeeklyScores = useMemo(
     () => liveWeeklyScoresState.data,
     [liveWeeklyScoresState.data],
   );
-  const liveRaceStartMs = liveRaceForDisplay?.startTime?.toMillis?.() ?? 0;
+  const homeRaceStartMs = homeRaceForDisplay?.startTime?.toMillis?.() ?? 0;
   useEffect(() => {
     if (
       tab !== "home" ||
-      !liveRaceForDisplay ||
-      liveRaceForDisplay.status === "completed" ||
-      liveRaceStartMs <= 0
+      !homeRaceForDisplay ||
+      homeRaceForDisplay.status === "completed" ||
+      homeRaceStartMs <= 0
     ) {
       return;
     }
 
     setHomeNowMs(Date.now());
-    if (liveRaceStartMs <= Date.now()) {
+    if (homeRaceStartMs <= Date.now()) {
       return;
     }
     const intervalId = window.setInterval(() => {
       setHomeNowMs(Date.now());
     }, 1000);
     return () => window.clearInterval(intervalId);
-  }, [liveRaceForDisplay?.id, liveRaceForDisplay?.status, liveRaceStartMs, tab]);
+  }, [homeRaceForDisplay?.id, homeRaceForDisplay?.status, homeRaceStartMs, tab]);
   const canSeeAllLiveRacePicks = useMemo(() => {
-    if (!liveRaceForDisplay) return false;
-    if (liveRaceForDisplay.status === "completed") return true;
-    return liveRaceStartMs > 0 && liveRaceStartMs <= homeNowMs;
-  }, [homeNowMs, liveRaceForDisplay?.id, liveRaceForDisplay?.status, liveRaceStartMs]);
+    if (!homeRaceForDisplay) return false;
+    if (homeRaceForDisplay.status === "completed") return true;
+    return homeRaceStartMs > 0 && homeRaceStartMs <= homeNowMs;
+  }, [homeNowMs, homeRaceForDisplay?.id, homeRaceForDisplay?.status, homeRaceStartMs]);
   const liveRacePicksQuery = useMemo<Query | null>(() => {
     if (
       tab !== "home" ||
       !selectedLeagueId ||
-      !liveRaceForDisplay ||
+      !homeRaceForDisplay ||
       !canSeeAllLiveRacePicks
     ) {
       return null;
@@ -386,9 +340,9 @@ export default function App() {
 
     return query(
       collection(db, "leagues", selectedLeagueId, "picks"),
-      where("raceId", "==", liveRaceForDisplay.id),
+      where("raceId", "==", homeRaceForDisplay.id),
     );
-  }, [canSeeAllLiveRacePicks, liveRaceForDisplay?.id, selectedLeagueId, tab]);
+  }, [canSeeAllLiveRacePicks, homeRaceForDisplay?.id, selectedLeagueId, tab]);
   const liveRacePicksState = useFirestoreCollection<PickDoc>(liveRacePicksQuery);
 
   const selectedRaceWeeklyScoresQuery = useMemo<Query | null>(() => {
@@ -416,15 +370,21 @@ export default function App() {
     [membersState.data],
   );
   const liveRacePointDriversForDisplay = useMemo(
-    () => normalizeRacePointDrivers(liveRacePointsForDisplay),
-    [liveRacePointsForDisplay],
+    () => normalizeRacePointDrivers(homeRacePointsForDisplay),
+    [homeRacePointsForDisplay],
   );
 
-  /** When race is live, map driverId -> current running position for picks UI. */
+  /** On home race, map driverId -> finish position (preferred) or running position. */
   const driverPositionByDriverId = useMemo(() => {
     const map: Record<string, number> = {};
     for (const d of liveRacePointDriversForDisplay) {
-      if (d.runningPosition != null) map[d.driverId] = d.runningPosition;
+      if (d.finishPosition != null) {
+        map[d.driverId] = d.finishPosition;
+        continue;
+      }
+      if (d.runningPosition != null) {
+        map[d.driverId] = d.runningPosition;
+      }
     }
     return map;
   }, [liveRacePointDriversForDisplay]);
@@ -806,9 +766,8 @@ export default function App() {
               selectedLeagueId={selectedLeagueId}
               userId={user?.uid ?? null}
               primaryRace={primaryRace ?? null}
-              upcomingRace={upcomingRace ?? null}
               liveRace={liveRaceForDisplay}
-              liveRacePoints={liveRacePointsForDisplay}
+              liveRacePoints={homeRacePointsForDisplay}
               liveWeeklyScores={liveWeeklyScores}
               liveRacePicksState={liveRacePicksState}
               canSeeAllLiveRacePicks={canSeeAllLiveRacePicks}
@@ -880,7 +839,7 @@ export default function App() {
               races={races}
               selectedRace={selectedRace ?? null}
               selectedRaceId={selectedRaceId}
-              setSelectedRaceId={setSelectedRaceFromUser}
+              setSelectedRaceId={setSelectedRaceId}
               selectedRaceTiers={selectedRaceEffectiveTiers}
               selectedRaceScoreState={selectedRaceScoreState}
               selectedRacePickState={selectedRacePickState}

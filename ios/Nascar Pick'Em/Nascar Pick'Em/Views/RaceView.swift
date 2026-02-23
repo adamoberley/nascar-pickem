@@ -282,9 +282,30 @@ struct RaceView: View {
                             .font(NASCARTheme.textFont(size: 14, weight: .semibold))
                             .foregroundStyle(.secondary)
                     }
-                    Text(race.track)
-                        .font(NASCARTheme.textFont(size: 16))
-                        .foregroundStyle(.secondary)
+                    HStack(alignment: .center, spacing: 8) {
+                        Text(race.track)
+                            .font(NASCARTheme.textFont(size: 16))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                        if race.status == .completed {
+                            Label(viewModel.selectedRaceHasFinalResults ? "FINISHED" : "UNOFFICIAL", systemImage: "car.fill")
+                                .font(NASCARTheme.textFont(size: 12, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(
+                                    Capsule().fill(viewModel.selectedRaceHasFinalResults ? NASCARTheme.blue : NASCARTheme.yellow)
+                                )
+                        } else if race.status == .locked {
+                            Label("LIVE", systemImage: "car.fill")
+                                .font(NASCARTheme.textFont(size: 12, weight: .bold))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Capsule().fill(NASCARTheme.red))
+                        }
+                    }
                     Text("\(race.startTime.formatted(date: .abbreviated, time: .omitted)) – \(race.startTime.formatted(date: .omitted, time: .shortened))\(race.tvChannel.map { " · \($0)" } ?? "")")
                         .font(NASCARTheme.textFont(size: 15))
                     lockCountdown(lockDate: race.lockTime, isPast: race.status == .locked || race.status == .completed)

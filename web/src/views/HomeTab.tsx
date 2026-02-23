@@ -9,7 +9,8 @@ import type {
   WeeklyScoreDoc,
 } from "../lib/types";
 import { PicksTierSummary } from "../components/PicksTierSummary";
-import { RaceCard } from "../components/RaceCard";
+import { CountdownChip } from "../components/CountdownChip";
+import { RaceStatusBadge } from "../components/RaceStatusBadge";
 import { syncLiveRaceNow } from "../lib/api";
 import { buildPickTierLookups, getPickTierForDriverId } from "../lib/pick-tiers";
 
@@ -37,7 +38,6 @@ interface Props {
   userId: string | null;
   /** Race we show for picks (live race while in progress, otherwise next upcoming). */
   primaryRace: (RaceDoc & { id: string }) | null;
-  upcomingRace: (RaceDoc & { id: string }) | null;
   liveRace: (RaceDoc & { id: string }) | null;
   liveRacePoints: RacePointsDoc | null;
   liveWeeklyScores: WeeklyScoreDoc[];
@@ -59,7 +59,6 @@ export function HomeTab({
   selectedLeagueId,
   userId,
   primaryRace,
-  upcomingRace,
   liveRace,
   liveRacePoints,
   liveWeeklyScores,
@@ -167,24 +166,51 @@ export function HomeTab({
     }
   };
 
+  const primaryRaceIsCompleted = primaryRace?.status === "completed";
+  const primaryRaceHasFinalResults = useMemo(() => {
+    const finishPositions = (liveRacePoints?.drivers ?? []).filter(
+      (entry) => entry.finishPosition != null,
+    );
+    return finishPositions.length >= 20;
+  }, [liveRacePoints?.drivers]);
+
+  const primaryRaceBadgeLabel = primaryRaceIsCompleted
+    ? primaryRaceHasFinalResults
+      ? "FINISHED"
+      : "UNOFFICIAL"
+    : null;
+
   const allDriverPointRows = useMemo(
     () => {
-      const rows =
-        Object.keys(driverPointsByDriverId).length > 0
-          ? Object.entries(driverPointsByDriverId).map(([driverId, points]) => ({
-              driverId,
-              points,
-              position: driverPositionByDriverId[driverId] ?? null,
-            }))
-          : (liveRacePoints?.drivers ?? []).map((entry) => ({
-              driverId: entry.driverId,
-              points: entry.basePoints,
-              position:
-                entry.runningPosition ??
-                entry.finishPosition ??
-                driverPositionByDriverId[entry.driverId] ??
-                null,
-            }));
+      const pointsByDriverId = new Map<string, number>();
+      const positionByDriverId = new Map<string, number | null>();
+
+      for (const [driverId, points] of Object.entries(driverPointsByDriverId)) {
+        pointsByDriverId.set(driverId, points);
+        positionByDriverId.set(driverId, driverPositionByDriverId[driverId] ?? null);
+      }
+
+      for (const entry of liveRacePoints?.drivers ?? []) {
+        if (!pointsByDriverId.has(entry.driverId)) {
+          pointsByDriverId.set(entry.driverId, entry.basePoints);
+        }
+
+        if (!positionByDriverId.has(entry.driverId)) {
+          positionByDriverId.set(
+            entry.driverId,
+            entry.finishPosition ??
+              entry.runningPosition ??
+              driverPositionByDriverId[entry.driverId] ??
+              null,
+          );
+        }
+      }
+
+      const rows = Array.from(pointsByDriverId.entries()).map(([driverId, points]) => ({
+        driverId,
+        points,
+        position: positionByDriverId.get(driverId) ?? null,
+      }));
 
       return rows.sort((a, b) => {
         const aPosition = a.position ?? Number.MAX_SAFE_INTEGER;
@@ -350,7 +376,9 @@ export function HomeTab({
       ) : (
         <p className="your-picks-empty">
           <span className="icon" aria-hidden>☑</span>
-          {liveRace ? "No picks for this race." : "No picks selected — tap to make your picks"}
+          {liveRace || primaryRaceIsCompleted
+            ? "No picks for this race."
+            : "No picks selected — tap to make your picks"}
         </p>
       )}
     </button>
@@ -364,7 +392,7 @@ export function HomeTab({
             <h2 className="race-name">{liveRace.name}</h2>
             <div className="live-race-track-row">
               <p className="race-meta live-race-track">{liveRace.track}</p>
-              <span className="live-badge" aria-hidden>LIVE</span>
+              <RaceStatusBadge label="LIVE" tone="live" />
             </div>
             {liveProgressText ? (
               <p className="race-meta live-race-progress">{liveProgressText}</p>
@@ -433,7 +461,7 @@ export function HomeTab({
           ) : null}
 
           <div className="app-card">
-            <h2 className="section-title">Live Leaderboard</h2>
+            <h2 className="section-title">Race Leaderboard</h2>
             {!canSeeAllLiveRacePicks ? (
               <p className="race-meta">All picks become visible when the race starts.</p>
             ) : liveRacePicksState.loading ? (
@@ -515,16 +543,42 @@ export function HomeTab({
       {!liveRace && primaryRace ? (
         <>
           {remindersCard}
-          <RaceCard
-            name={primaryRace.name}
-            track={primaryRace.track}
-            startTime={primaryRace.startTime}
-            lockTime={primaryRace.lockTime}
-            tvChannel={primaryRace.tvChannel}
-          />
+          <div className="app-card race-card">
+            <h2 className="race-name">{primaryRace.name}</h2>
+            <div className="live-race-track-row">
+              <p className="race-meta live-race-track">{primaryRace.track}</p>
+              {primaryRaceBadgeLabel ? (
+                <RaceStatusBadge
+                  label={primaryRaceBadgeLabel}
+                  tone={primaryRaceHasFinalResults ? "finished" : "unofficial"}
+                />
+              ) : null}
+            </div>
+            <p className="race-meta">
+              {new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(
+                new Date(primaryRace.startTime.toMillis()),
+              )}
+              {" – "}
+              {new Intl.DateTimeFormat("en-US", { timeStyle: "short" }).format(
+                new Date(primaryRace.startTime.toMillis()),
+              )}
+              {primaryRace.tvChannel ? ` · ${primaryRace.tvChannel}` : ""}
+            </p>
+            {primaryRace.status !== "completed" ? (
+              <div className="countdown-wrap">
+                <CountdownChip lockTime={primaryRace.lockTime} />
+              </div>
+            ) : null}
+          </div>
           {allDriverPointRows.length ? (
             <div className="app-card live-driver-points-card">
-              <h2 className="section-title">Driver points</h2>
+              <h2 className="section-title">
+                {primaryRaceIsCompleted
+                  ? primaryRaceHasFinalResults
+                    ? "Race Results"
+                    : "Race Results (Unofficial)"
+                  : "Driver points"}
+              </h2>
               <ul className="live-driver-points-list">
                 {allDriverPointRows.map((entry) => {
                   const tierColor = getPickTierForDriverId(entry.driverId, pickTierLookups);
@@ -557,6 +611,82 @@ export function HomeTab({
                   );
                 })}
               </ul>
+            </div>
+          ) : null}
+
+          {primaryRaceIsCompleted ? (
+            <div className="app-card">
+              <h2 className="section-title">Race Leaderboard</h2>
+              {!canSeeAllLiveRacePicks ? (
+                <p className="race-meta">All picks become visible when the race starts.</p>
+              ) : liveRacePicksState.loading ? (
+                <p className="race-meta" aria-busy="true">Loading race picks…</p>
+              ) : liveRaceLeaderboardRows.length === 0 ? (
+                <p className="race-meta">No picks submitted for this race yet.</p>
+              ) : (
+                <div className="race-leaderboard-rows">
+                  {liveRaceLeaderboardRows.map((row, index) => {
+                    const isExpanded = expandedLiveLeaderboardUserId === row.userId;
+                    return (
+                      <div key={row.userId} className="race-leaderboard-row">
+                        <button
+                          type="button"
+                          className="race-leaderboard-trigger"
+                          onClick={() =>
+                            setExpandedLiveLeaderboardUserId(isExpanded ? null : row.userId)
+                          }
+                          aria-expanded={isExpanded}
+                        >
+                          <span className="race-leaderboard-rank">#{index + 1}</span>
+                          <span className="race-leaderboard-name">{row.displayName}</span>
+                          <span className="race-leaderboard-total">{row.weeklyTotal}</span>
+                          <span className="race-leaderboard-chevron" aria-hidden>
+                            {isExpanded ? "▼" : "▶"}
+                          </span>
+                        </button>
+                        {isExpanded ? (
+                          <div
+                            className={`race-leaderboard-dropdown ${
+                              row.pick ? "" : "race-leaderboard-dropdown--empty"
+                            }`}
+                          >
+                            {row.pick ? (
+                              <div className="your-picks-tiers">
+                                <PicksTierSummary
+                                  title="Tier A"
+                                  limit={3}
+                                  driverIds={row.pick.tierA}
+                                  driversById={driversById}
+                                  tierColor="yellow"
+                                  driverPointsByDriverId={driverPointsByDriverId}
+                                />
+                                <PicksTierSummary
+                                  title="Tier B"
+                                  limit={2}
+                                  driverIds={row.pick.tierB}
+                                  driversById={driversById}
+                                  tierColor="red"
+                                  driverPointsByDriverId={driverPointsByDriverId}
+                                />
+                                <PicksTierSummary
+                                  title="Tier C"
+                                  limit={1}
+                                  driverIds={row.pick.tierC}
+                                  driversById={driversById}
+                                  tierColor="blue"
+                                  driverPointsByDriverId={driverPointsByDriverId}
+                                />
+                              </div>
+                            ) : (
+                              <p className="race-meta">No pick submitted for this race.</p>
+                            )}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           ) : null}
           {yourPicksCard}

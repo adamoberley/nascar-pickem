@@ -12,6 +12,8 @@ struct AdminView: View {
     @State private var adminError: String?
 
     @State private var leagueSettingsExpanded: Bool = false
+    @State private var adjustmentExpanded: Bool = false
+    @State private var memberPaymentsExpanded: Bool = false
     @State private var monitorRaceId: String = ""
     @State private var expandedPickUserId: String?
 
@@ -170,47 +172,63 @@ struct AdminView: View {
 
     private var memberPaidStatusSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Member Payments")
-                .font(NASCARTheme.displayFont(size: 20, weight: .bold))
-                .textCase(.uppercase)
-            if viewModel.members.isEmpty {
-                Text("No members loaded.")
-                    .font(NASCARTheme.textFont(size: 14))
-                    .foregroundStyle(.secondary)
-            } else {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(viewModel.members.sorted { $0.displayName < $1.displayName }) { member in
-                        HStack(spacing: 10) {
-                            Text(member.displayName)
-                                .font(NASCARTheme.textFont(size: 15, weight: .semibold))
-                                .lineLimit(1)
-                            Spacer()
-                            Text(member.paidStatus == .paid ? "Paid" : "Unpaid")
-                                .font(NASCARTheme.textFont(size: 12, weight: .bold))
-                                .foregroundStyle(member.paidStatus == .paid ? .green : NASCARTheme.red)
-                            Button(member.paidStatus == .paid ? "Mark Unpaid" : "Mark Paid") {
-                                adminMessage = nil
-                                adminError = nil
-                                adminBusy = true
-                                let nextStatus: PaidStatus = member.paidStatus == .paid ? .unpaid : .paid
-                                viewModel.setMemberPaidStatus(userId: member.id, paidStatus: nextStatus) { result in
-                                    adminBusy = false
-                                    switch result {
-                                    case .success:
-                                        adminMessage = "\(member.displayName) marked \(nextStatus.rawValue)."
-                                    case .failure(let error):
-                                        adminError = error.localizedDescription
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    memberPaymentsExpanded.toggle()
+                }
+            } label: {
+                HStack {
+                    Text("Member Payments")
+                        .font(NASCARTheme.displayFont(size: 20, weight: .bold))
+                        .textCase(.uppercase)
+                    Spacer()
+                    Image(systemName: memberPaymentsExpanded ? "chevron.up" : "chevron.down")
+                        .font(NASCARTheme.textFont(size: 14, weight: .bold))
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .buttonStyle(.plain)
+
+            if memberPaymentsExpanded {
+                if viewModel.members.isEmpty {
+                    Text("No members loaded.")
+                        .font(NASCARTheme.textFont(size: 14))
+                        .foregroundStyle(.secondary)
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(viewModel.members.sorted { $0.displayName < $1.displayName }) { member in
+                            HStack(spacing: 10) {
+                                Text(member.displayName)
+                                    .font(NASCARTheme.textFont(size: 15, weight: .semibold))
+                                    .lineLimit(1)
+                                Spacer()
+                                Text(member.paidStatus == .paid ? "Paid" : "Unpaid")
+                                    .font(NASCARTheme.textFont(size: 12, weight: .bold))
+                                    .foregroundStyle(member.paidStatus == .paid ? .green : NASCARTheme.red)
+                                Button(member.paidStatus == .paid ? "Mark Unpaid" : "Mark Paid") {
+                                    adminMessage = nil
+                                    adminError = nil
+                                    adminBusy = true
+                                    let nextStatus: PaidStatus = member.paidStatus == .paid ? .unpaid : .paid
+                                    viewModel.setMemberPaidStatus(userId: member.id, paidStatus: nextStatus) { result in
+                                        adminBusy = false
+                                        switch result {
+                                        case .success:
+                                            adminMessage = "\(member.displayName) marked \(nextStatus.rawValue)."
+                                        case .failure(let error):
+                                            adminError = error.localizedDescription
+                                        }
                                     }
                                 }
+                                .font(NASCARTheme.textFont(size: 12, weight: .semibold))
+                                .buttonStyle(.plain)
+                                .foregroundStyle(NASCARTheme.blue)
+                                .disabled(adminBusy)
                             }
-                            .font(NASCARTheme.textFont(size: 12, weight: .semibold))
-                            .buttonStyle(.plain)
-                            .foregroundStyle(NASCARTheme.blue)
-                            .disabled(adminBusy)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(NASCARTheme.secondarySurface(for: colorScheme)))
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(NASCARTheme.secondarySurface(for: colorScheme)))
                     }
                 }
             }
@@ -369,74 +387,89 @@ struct AdminView: View {
 
     private var adjustmentSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Add Penalty / Correction")
-                .font(NASCARTheme.displayFont(size: 20, weight: .bold))
-                .textCase(.uppercase)
-
-            Picker("Race", selection: $adjustmentRaceId) {
-                Text("Select race").tag("")
-                ForEach(viewModel.races) { race in
-                    Text(race.name).tag(race.id)
-                }
-            }
-            .pickerStyle(.menu)
-
-            Picker("Driver", selection: $adjustmentDriverId) {
-                Text("Select driver").tag("")
-                ForEach(viewModel.drivers) { driver in
-                    Text("#\(driver.number) \(driver.name)").tag(driver.id)
-                }
-            }
-            .pickerStyle(.menu)
-
-            Picker("Type", selection: $adjustmentType) {
-                Text("Penalty").tag("penalty")
-                Text("Correction").tag("correction")
-            }
-            .pickerStyle(.segmented)
-
-            TextField("Delta Points (e.g. -10)", value: $adjustmentDeltaPoints, format: .number)
-                .keyboardType(.numbersAndPunctuation)
-                .textFieldStyle(.plain)
-                .appInputField()
-
-            TextField("Reason", text: $adjustmentReason, axis: .vertical)
-                .lineLimit(2...4)
-                .textFieldStyle(.plain)
-                .appInputField()
-
             Button {
-                guard !adjustmentRaceId.isEmpty, !adjustmentDriverId.isEmpty, !adjustmentReason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                    adminError = "Race, driver, and reason are required."
-                    adminMessage = nil
-                    return
-                }
-                adminMessage = nil
-                adminError = nil
-                adminBusy = true
-                viewModel.submitAdjustment(
-                    raceId: adjustmentRaceId,
-                    driverId: adjustmentDriverId,
-                    type: adjustmentType,
-                    deltaPoints: adjustmentDeltaPoints,
-                    reason: adjustmentReason
-                ) { result in
-                    adminBusy = false
-                    switch result {
-                    case .success:
-                        adminMessage = "Adjustment added."
-                        adjustmentReason = ""
-                    case .failure(let error):
-                        adminError = error.localizedDescription
-                    }
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    adjustmentExpanded.toggle()
                 }
             } label: {
-                Text("Apply Adjustment")
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
+                HStack {
+                    Text("Add Penalty / Correction")
+                        .font(NASCARTheme.displayFont(size: 20, weight: .bold))
+                        .textCase(.uppercase)
+                    Spacer()
+                    Image(systemName: adjustmentExpanded ? "chevron.up" : "chevron.down")
+                        .font(NASCARTheme.textFont(size: 14, weight: .bold))
+                        .foregroundStyle(.secondary)
+                }
             }
-            .buttonStyle(BrandPrimaryButtonStyle())
-            .disabled(adminBusy)
+            .buttonStyle(.plain)
+
+            if adjustmentExpanded {
+                Picker("Race", selection: $adjustmentRaceId) {
+                    Text("Select race").tag("")
+                    ForEach(viewModel.races) { race in
+                        Text(race.name).tag(race.id)
+                    }
+                }
+                .pickerStyle(.menu)
+
+                Picker("Driver", selection: $adjustmentDriverId) {
+                    Text("Select driver").tag("")
+                    ForEach(viewModel.drivers) { driver in
+                        Text("#\(driver.number) \(driver.name)").tag(driver.id)
+                    }
+                }
+                .pickerStyle(.menu)
+
+                Picker("Type", selection: $adjustmentType) {
+                    Text("Penalty").tag("penalty")
+                    Text("Correction").tag("correction")
+                }
+                .pickerStyle(.segmented)
+
+                TextField("Delta Points (e.g. -10)", value: $adjustmentDeltaPoints, format: .number)
+                    .keyboardType(.numbersAndPunctuation)
+                    .textFieldStyle(.plain)
+                    .appInputField()
+
+                TextField("Reason", text: $adjustmentReason, axis: .vertical)
+                    .lineLimit(2...4)
+                    .textFieldStyle(.plain)
+                    .appInputField()
+
+                Button {
+                    guard !adjustmentRaceId.isEmpty, !adjustmentDriverId.isEmpty, !adjustmentReason.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                        adminError = "Race, driver, and reason are required."
+                        adminMessage = nil
+                        return
+                    }
+                    adminMessage = nil
+                    adminError = nil
+                    adminBusy = true
+                    viewModel.submitAdjustment(
+                        raceId: adjustmentRaceId,
+                        driverId: adjustmentDriverId,
+                        type: adjustmentType,
+                        deltaPoints: adjustmentDeltaPoints,
+                        reason: adjustmentReason
+                    ) { result in
+                        adminBusy = false
+                        switch result {
+                        case .success:
+                            adminMessage = "Adjustment added."
+                            adjustmentReason = ""
+                        case .failure(let error):
+                            adminError = error.localizedDescription
+                        }
+                    }
+                } label: {
+                    Text("Apply Adjustment")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                }
+                .buttonStyle(BrandPrimaryButtonStyle())
+                .disabled(adminBusy)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .appCard()

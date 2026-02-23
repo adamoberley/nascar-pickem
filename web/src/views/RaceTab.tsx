@@ -10,6 +10,7 @@ import type {
 } from "../lib/types";
 import { CountdownChip } from "../components/CountdownChip";
 import { PicksTierSummary } from "../components/PicksTierSummary";
+import { RaceStatusBadge } from "../components/RaceStatusBadge";
 import {
   buildDriverPointsByDriverId,
   mapOfficialResultsToDriverPoints,
@@ -297,6 +298,29 @@ export function RaceTab({
     driversById,
     pickTierLookups,
   ]);
+  const selectedRaceHasFinalResults = useMemo(
+    () => normalizedRacePointDrivers.filter((row) => row.finishPosition != null).length >= 20,
+    [normalizedRacePointDrivers],
+  );
+  const selectedRaceStatusBadge = useMemo(() => {
+    if (!selectedRace) return null;
+    if (selectedRace.status === "locked") {
+      return { label: "LIVE", tone: "live" as const };
+    }
+    if (selectedRace.status === "completed") {
+      return {
+        label: selectedRaceHasFinalResults ? "FINISHED" : "UNOFFICIAL",
+        tone: selectedRaceHasFinalResults ? ("finished" as const) : ("unofficial" as const),
+      };
+    }
+    return null;
+  }, [selectedRace, selectedRaceHasFinalResults]);
+  const selectedRaceResultsHeading =
+    selectedRace?.status === "completed"
+      ? selectedRaceHasFinalResults
+        ? "Race Results"
+        : "Race Results (Unofficial)"
+      : "Results";
   const maxPossibleRacePoints = useMemo(() => {
     const bestTierTotal = (driverIds: string[], pickCount: number): number | null => {
       const sortedTierPoints = driverIds
@@ -332,7 +356,15 @@ export function RaceTab({
             {selectedRace ? (
               <>
                 <h3 className="race-name">{selectedRace.name}</h3>
-                <p className="race-meta">{selectedRace.track}</p>
+                <div className="race-status-row">
+                  <p className="race-meta race-status-track">{selectedRace.track}</p>
+                  {selectedRaceStatusBadge ? (
+                    <RaceStatusBadge
+                      label={selectedRaceStatusBadge.label}
+                      tone={selectedRaceStatusBadge.tone}
+                    />
+                  ) : null}
+                </div>
                 <p className="race-meta">
                   {new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(new Date(selectedRace.startTime.toMillis()))}
                   {" – "}
@@ -508,7 +540,7 @@ export function RaceTab({
           </div>
 
           <div className="app-card">
-            <h2 className="section-title">Results</h2>
+            <h2 className="section-title">{selectedRaceResultsHeading}</h2>
             {selectedRacePointsState.loading ? (
               <RaceLoadingState label="Loading results" rows={6} />
             ) : raceResultRows.length ? (
