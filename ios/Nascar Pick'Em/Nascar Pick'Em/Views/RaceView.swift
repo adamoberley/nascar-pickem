@@ -289,7 +289,7 @@ struct RaceView: View {
                             .lineLimit(1)
                         Spacer(minLength: 0)
                         if race.status == .completed {
-                            Label(viewModel.selectedRaceHasFinalResults ? "FINISHED" : "UNOFFICIAL", systemImage: "car.fill")
+                            Text(viewModel.selectedRaceHasFinalResults ? "FINISHED" : "UNOFFICIAL")
                                 .font(NASCARTheme.textFont(size: 12, weight: .bold))
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 8)
@@ -298,7 +298,7 @@ struct RaceView: View {
                                     Capsule().fill(viewModel.selectedRaceHasFinalResults ? NASCARTheme.blue : NASCARTheme.yellow)
                                 )
                         } else if race.status == .locked {
-                            Label("LIVE", systemImage: "car.fill")
+                            Text("LIVE")
                                 .font(NASCARTheme.textFont(size: 12, weight: .bold))
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 8)

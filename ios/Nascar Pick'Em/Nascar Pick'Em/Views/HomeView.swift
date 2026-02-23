@@ -445,7 +445,7 @@ struct HomeView: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Spacer(minLength: 0)
-                Label("LIVE", systemImage: "car.fill")
+                Text("LIVE")
                     .font(NASCARTheme.textFont(size: 12, weight: .bold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 8)
@@ -652,7 +652,7 @@ struct HomeView: View {
                         .lineLimit(1)
                     Spacer(minLength: 0)
                     if race.status == .completed {
-                        Label(showFinalBadge ? "FINISHED" : "UNOFFICIAL", systemImage: "car.fill")
+                        Text(showFinalBadge ? "FINISHED" : "UNOFFICIAL")
                             .font(NASCARTheme.textFont(size: 12, weight: .bold))
                             .foregroundStyle(.white)
                             .padding(.horizontal, 8)

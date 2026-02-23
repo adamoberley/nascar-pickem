@@ -1030,7 +1030,6 @@ textarea {
 .race-status-badge {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
   font-size: 0.7rem;
   font-weight: 800;
   letter-spacing: 0.08em;
@@ -1038,12 +1037,6 @@ textarea {
   background: var(--nascar-red);
   padding: 0.2rem 0.5rem;
   border-radius: 4px;
-}
-
-.race-status-badge-icon {
-  width: 0.82rem;
-  height: 0.82rem;
-  display: block;
 }
 
 .race-status-badge--live {
