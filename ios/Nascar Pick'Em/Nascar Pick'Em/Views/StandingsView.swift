@@ -162,6 +162,8 @@ struct StandingsView: View {
             }
             .appScreenBackground()
             .toolbar(.hidden, for: .navigationBar)
+            .onAppear { viewModel.beginObservingStandings() }
+            .onDisappear { viewModel.endObservingStandings() }
         }
     }
 

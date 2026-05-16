@@ -44,6 +44,7 @@ final class PlayerViewModel: ObservableObject {
     private var listeners: [ListenerRegistration] = []
     private var tierListener: ListenerRegistration?
     private var pickListener: ListenerRegistration?
+    private var seasonScoresListener: ListenerRegistration?
     private var allWeeklyScoresListener: ListenerRegistration?
     private var racePointsListener: ListenerRegistration?
     private var raceScoreListener: ListenerRegistration?
@@ -325,13 +326,9 @@ final class PlayerViewModel: ObservableObject {
             self?.members = members
         })
 
-        listeners.append(repository.observeSeasonScores(leagueId: leagueId) { [weak self] scores in
-            self?.seasonScores = scores
-        })
-
-        allWeeklyScoresListener = repository.observeAllWeeklyScores(leagueId: leagueId) { [weak self] scores in
-            self?.allWeeklyScores = scores
-        }
+        // seasonScores + allWeeklyScores are attached on demand via
+        // begin/endObservingStandings, called from StandingsView's
+        // .onAppear / .onDisappear. They are only consumed by StandingsView.
 
         observeTierAndPick()
         observeSelectedRaceDetails()
@@ -676,11 +673,36 @@ final class PlayerViewModel: ObservableObject {
         }
     }
 
+    /// Attach seasonScores + allWeeklyScores listeners. Idempotent — safe to
+    /// call on every StandingsView.onAppear. Call endObservingStandings from
+    /// .onDisappear to detach.
+    func beginObservingStandings() {
+        guard let leagueId = selectedLeague?.id else { return }
+        if seasonScoresListener == nil {
+            seasonScoresListener = repository.observeSeasonScores(leagueId: leagueId) { [weak self] scores in
+                self?.seasonScores = scores
+            }
+        }
+        if allWeeklyScoresListener == nil {
+            allWeeklyScoresListener = repository.observeAllWeeklyScores(leagueId: leagueId) { [weak self] scores in
+                self?.allWeeklyScores = scores
+            }
+        }
+    }
+
+    func endObservingStandings() {
+        seasonScoresListener?.remove()
+        seasonScoresListener = nil
+        allWeeklyScoresListener?.remove()
+        allWeeklyScoresListener = nil
+    }
+
     private func clearListeners() {
         listeners.forEach { $0.remove() }
         listeners.removeAll()
         tierListener?.remove()
         pickListener?.remove()
+        seasonScoresListener?.remove()
         allWeeklyScoresListener?.remove()
         racePointsListener?.remove()
         raceScoreListener?.remove()
@@ -694,6 +716,7 @@ final class PlayerViewModel: ObservableObject {
         notificationsListener?.remove()
         tierListener = nil
         pickListener = nil
+        seasonScoresListener = nil
         allWeeklyScoresListener = nil
         racePointsListener = nil
         raceScoreListener = nil
