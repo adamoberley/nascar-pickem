@@ -815,7 +815,7 @@ final class LeagueRepository {
             .document(userId)
             .collection("notifications")
             .order(by: "createdAt", descending: true)
-            .limit(to: 20)
+            .limit(to: 5)
             .addSnapshotListener { snapshot, _ in
                 let notifications: [UserNotificationItem] = snapshot?.documents.map { doc in
                     let data = doc.data()
