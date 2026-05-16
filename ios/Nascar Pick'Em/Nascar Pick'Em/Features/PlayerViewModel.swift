@@ -315,9 +315,11 @@ final class PlayerViewModel: ObservableObject {
             self.observeStandingsSnapshot()
         })
 
-        listeners.append(repository.observeDrivers(leagueId: leagueId) { [weak self] drivers in
-            self?.drivers = drivers
-        })
+        // Drivers are stable per season — a one-shot fetch is enough. The
+        // Admin "Refresh data" path re-fetches after manualRefreshData runs.
+        repository.fetchDrivers(leagueId: leagueId) { [weak self] drivers in
+            Task { @MainActor in self?.drivers = drivers }
+        }
 
         listeners.append(repository.observeMembers(leagueId: leagueId) { [weak self] members in
             self?.members = members
@@ -443,7 +445,16 @@ final class PlayerViewModel: ObservableObject {
             completion(.failure(NSError(domain: "PlayerViewModel", code: -1, userInfo: [NSLocalizedDescriptionKey: "No league selected"])))
             return
         }
-        repository.runManualRefresh(leagueId: leagueId, completion: completion)
+        repository.runManualRefresh(leagueId: leagueId) { [weak self] result in
+            if case .success = result {
+                // Drivers are fetched one-shot at league select; re-fetch
+                // here so ingest changes (sub drivers, team moves) appear.
+                self?.repository.fetchDrivers(leagueId: leagueId) { drivers in
+                    Task { @MainActor in self?.drivers = drivers }
+                }
+            }
+            completion(result)
+        }
     }
 
     func syncLiveRaceNow(completion: @escaping (Result<LiveRaceSyncResult, Error>) -> Void) {

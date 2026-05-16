@@ -407,12 +407,15 @@ final class LeagueRepository {
             }
     }
 
-    func observeDrivers(
+    /// One-shot fetch of drivers. Drivers are stable per season — sub-driver
+    /// changes are cosmetic (display name on picks UI), not functional. Call
+    /// again after manualRefreshData to pick up ingest changes.
+    func fetchDrivers(
         leagueId: String,
-        onChange: @escaping ([DriverItem]) -> Void
-    ) -> ListenerRegistration {
+        completion: @escaping ([DriverItem]) -> Void
+    ) {
         db.collection("leagues").document(leagueId).collection("drivers")
-            .addSnapshotListener { snapshot, _ in
+            .getDocuments(source: .default) { snapshot, _ in
                 let drivers: [DriverItem] = snapshot?.documents.map { doc in
                     let data = doc.data()
                     return DriverItem(
@@ -423,8 +426,7 @@ final class LeagueRepository {
                         nascarDriverId: data["nascarDriverId"] as? Int
                     )
                 } ?? []
-
-                onChange(drivers)
+                completion(drivers)
             }
     }
 
