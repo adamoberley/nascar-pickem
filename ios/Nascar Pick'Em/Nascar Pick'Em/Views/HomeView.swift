@@ -366,8 +366,16 @@ struct HomeView: View {
                     expandedLiveLeaderboardUserId = newUserId
                 }
             }
-            .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { value in
-                liveRefreshNow = value
+            // Only tick during an active refresh cooldown. .task auto-cancels
+            // on view disappear and re-launches when the cooldown changes.
+            .task(id: liveRefreshCooldownUntil) {
+                guard liveRefreshCooldownUntil != nil else { return }
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(1))
+                    if Task.isCancelled { return }
+                    liveRefreshNow = Date()
+                    if liveRefreshCooldownUntil == nil { return }
+                }
             }
         }
     }
