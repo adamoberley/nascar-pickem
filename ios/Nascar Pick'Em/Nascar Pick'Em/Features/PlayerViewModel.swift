@@ -17,6 +17,10 @@ final class PlayerViewModel: ObservableObject {
     @Published var seasonScores: [SeasonScoreItem] = []
     @Published var members: [LeagueMember] = []
     @Published var allWeeklyScores: [WeeklyScoreItem] = []
+    /// Weekly scores for the live/home race (all members). Fed by a race-scoped listener.
+    @Published var liveWeeklyScores: [WeeklyScoreItem] = []
+    /// Weekly scores for the currently selected race (all members). Fed by a race-scoped listener.
+    @Published var selectedRaceWeeklyScores: [WeeklyScoreItem] = []
 
     @Published var selectedRaceId: String?
     @Published var selectedRacePoints: [(String, Int)] = []
@@ -52,6 +56,8 @@ final class PlayerViewModel: ObservableObject {
     private var selectedRacePicksListener: ListenerRegistration?
     private var liveRacePointsListener: ListenerRegistration?
     private var liveRacePicksListener: ListenerRegistration?
+    private var liveWeeklyScoresListener: ListenerRegistration?
+    private var selectedRaceWeeklyScoresListener: ListenerRegistration?
     private var liveRacePicksUnlockTimer: Timer?
     private var standingsSnapshotListener: ListenerRegistration?
     private var adjustmentsListener: ListenerRegistration?
@@ -123,14 +129,6 @@ final class PlayerViewModel: ObservableObject {
         return races.first?.id
     }
 
-    /// Live weekly scores for the current live race (sorted by weeklyTotal desc).
-    var liveWeeklyScores: [WeeklyScoreItem] {
-        guard let raceId = effectiveLiveRace?.id else { return [] }
-        return allWeeklyScores
-            .filter { $0.raceId == raceId }
-            .sorted { $0.weeklyTotal > $1.weeklyTotal }
-    }
-
     /// When race is live, driverId -> current running position for picks UI.
     var driverPositionByDriverId: [String: Int] {
         var map: [String: Int] = [:]
@@ -181,11 +179,9 @@ final class PlayerViewModel: ObservableObject {
             pointsByDriver[driverId] = basePoints + (adjByDriver[driverId] ?? 0)
         }
 
-        if let raceId = selectedRaceId {
-            for score in allWeeklyScores where score.raceId == raceId {
-                for item in score.breakdown where pointsByDriver[item.driverId] == nil {
-                    pointsByDriver[item.driverId] = item.finalPointsApplied
-                }
+        for score in selectedRaceWeeklyScores {
+            for item in score.breakdown where pointsByDriver[item.driverId] == nil {
+                pointsByDriver[item.driverId] = item.finalPointsApplied
             }
         }
 
@@ -215,13 +211,6 @@ final class PlayerViewModel: ObservableObject {
         guard let race = effectiveLiveRace else { return false }
         if race.status == .completed { return true }
         return race.startTime <= Date()
-    }
-
-    var selectedRaceWeeklyScores: [WeeklyScoreItem] {
-        guard let raceId = selectedRaceId else { return [] }
-        return allWeeklyScores
-            .filter { $0.raceId == raceId }
-            .sorted { $0.weeklyTotal > $1.weeklyTotal }
     }
 
     /// Driver points map for the currently live race.
@@ -314,6 +303,7 @@ final class PlayerViewModel: ObservableObject {
             self.observeTierAndPick()
             self.observeSelectedRaceDetails()
             self.observeLiveRacePoints()
+            self.observeLiveWeeklyScores()
             self.observeLiveRacePicks()
             self.observeStandingsSnapshot()
         })
@@ -333,6 +323,7 @@ final class PlayerViewModel: ObservableObject {
         observeTierAndPick()
         observeSelectedRaceDetails()
         observeLiveRacePoints()
+        observeLiveWeeklyScores()
         observeLiveRacePicks()
         observeStandingsSnapshot()
         observeNotifications()
@@ -564,6 +555,20 @@ final class PlayerViewModel: ObservableObject {
         }
     }
 
+    /// Observes weekly scores (all members) for the current live race. Replaces
+    /// the previous derivation over the full-league `allWeeklyScores` listener.
+    private func observeLiveWeeklyScores() {
+        liveWeeklyScoresListener?.remove()
+        liveWeeklyScoresListener = nil
+        guard let leagueId = selectedLeague?.id, let raceId = effectiveLiveRace?.id else {
+            liveWeeklyScores = []
+            return
+        }
+        liveWeeklyScoresListener = repository.observeRaceWeeklyScores(leagueId: leagueId, raceId: raceId) { [weak self] items in
+            self?.liveWeeklyScores = items
+        }
+    }
+
     private func observeLiveRacePicks() {
         liveRacePicksListener?.remove()
         liveRacePicksListener = nil
@@ -615,11 +620,13 @@ final class PlayerViewModel: ObservableObject {
         raceScoreListener?.remove()
         selectedRacePickListener?.remove()
         selectedRacePicksListener?.remove()
+        selectedRaceWeeklyScoresListener?.remove()
         adjustmentsListener?.remove()
         racePointsListener = nil
         raceScoreListener = nil
         selectedRacePickListener = nil
         selectedRacePicksListener = nil
+        selectedRaceWeeklyScoresListener = nil
         adjustmentsListener = nil
 
         guard let leagueId = selectedLeague?.id,
@@ -630,6 +637,7 @@ final class PlayerViewModel: ObservableObject {
             selectedRacePick = nil
             selectedRaceAdjustments = []
             selectedRacePicks = []
+            selectedRaceWeeklyScores = []
             return
         }
 
@@ -654,6 +662,10 @@ final class PlayerViewModel: ObservableObject {
             }
         } else {
             selectedRacePicks = []
+        }
+
+        selectedRaceWeeklyScoresListener = repository.observeRaceWeeklyScores(leagueId: leagueId, raceId: raceId) { [weak self] items in
+            self?.selectedRaceWeeklyScores = items
         }
 
         adjustmentsListener = repository.observeAdjustments(leagueId: leagueId, raceId: raceId) { [weak self] items in
@@ -708,8 +720,10 @@ final class PlayerViewModel: ObservableObject {
         raceScoreListener?.remove()
         selectedRacePickListener?.remove()
         selectedRacePicksListener?.remove()
+        selectedRaceWeeklyScoresListener?.remove()
         liveRacePointsListener?.remove()
         liveRacePicksListener?.remove()
+        liveWeeklyScoresListener?.remove()
         liveRacePicksUnlockTimer?.invalidate()
         standingsSnapshotListener?.remove()
         adjustmentsListener?.remove()
@@ -722,12 +736,16 @@ final class PlayerViewModel: ObservableObject {
         raceScoreListener = nil
         selectedRacePickListener = nil
         selectedRacePicksListener = nil
+        selectedRaceWeeklyScoresListener = nil
         liveRacePointsListener = nil
         liveRacePicksListener = nil
+        liveWeeklyScoresListener = nil
         liveRacePicksUnlockTimer = nil
         standingsSnapshotListener = nil
         adjustmentsListener = nil
         notificationsListener = nil
         autoFocusedRaceId = nil
+        liveWeeklyScores = []
+        selectedRaceWeeklyScores = []
     }
 }

@@ -558,6 +558,22 @@ final class LeagueRepository {
             }
     }
 
+    /// Observes weekly scores for a single race across all members, sorted by
+    /// weeklyTotal desc. Uses the (raceId, weeklyTotal DESC) composite index.
+    func observeRaceWeeklyScores(
+        leagueId: String,
+        raceId: String,
+        onChange: @escaping ([WeeklyScoreItem]) -> Void
+    ) -> ListenerRegistration {
+        db.collection("leagues").document(leagueId).collection("weeklyScores")
+            .whereField("raceId", isEqualTo: raceId)
+            .order(by: "weeklyTotal", descending: true)
+            .addSnapshotListener { snapshot, _ in
+                let items = snapshot?.documents.map { self.parseWeeklyScore(document: $0) } ?? []
+                onChange(items)
+            }
+    }
+
     func observeRacePoints(
         leagueId: String,
         raceId: String,
