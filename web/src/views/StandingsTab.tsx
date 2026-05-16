@@ -104,7 +104,7 @@ export function StandingsTab({
               {(isWeeklyExpanded ? weeklyLeaderboardRows : weeklyLeaderboardRows.slice(0, 3)).map((row) => (
                 <div
                   key={row.userId}
-                  className={`standings-row standings-row--rank-${Math.min(row.rank, 2)} ${row.userId === userId ? "standings-row--you" : ""} ${row.rank === 1 ? "standings-row--leader" : ""}`}
+                  className={`standings-row ${row.rank <= 2 ? `standings-row--rank-${row.rank}` : ""} ${row.userId === userId ? "standings-row--you" : ""} ${row.rank === 1 ? "standings-row--leader" : ""}`}
                 >
                   <span className="standings-rank">#{row.rank}</span>
                   <span className="standings-name">
@@ -160,7 +160,7 @@ export function StandingsTab({
               {(isMonthlyExpanded ? sprintLeaderboardRows : sprintLeaderboardRows.slice(0, 3)).map((row, i) => (
                 <div
                   key={row.userId}
-                  className={`standings-row standings-row--rank-${Math.min(i + 1, 2)} ${row.userId === userId ? "standings-row--you" : ""} ${i === 0 ? "standings-row--leader" : ""}`}
+                  className={`standings-row ${i + 1 <= 2 ? `standings-row--rank-${i + 1}` : ""} ${row.userId === userId ? "standings-row--you" : ""} ${i === 0 ? "standings-row--leader" : ""}`}
                 >
                   <span className="standings-rank">#{i + 1}</span>
                   <span className="standings-name">
@@ -193,7 +193,7 @@ export function StandingsTab({
           {(isSeasonExpanded ? mergedStandingsRows : mergedStandingsRows.slice(0, 3)).map((row) => (
             <div
               key={row.id}
-              className={`standings-row ${row.id === userId ? "standings-row--you" : ""} standings-row--rank-${Math.min(row.rank, 3)}`}
+              className={`standings-row ${row.id === userId ? "standings-row--you" : ""} ${row.rank <= 3 ? `standings-row--rank-${row.rank}` : ""}`}
             >
               <span className="standings-rank">#{row.rank}</span>
               <span className="standings-name">{row.displayName}</span>

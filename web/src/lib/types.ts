@@ -3,6 +3,7 @@ import type { Timestamp } from "firebase/firestore";
 export type MemberRole = "admin" | "player";
 export type PaidStatus = "paid" | "unpaid";
 export type RaceStatus = "scheduled" | "locked" | "completed";
+export type AppTab = "home" | "picks" | "standings" | "race" | "admin";
 
 export interface LeagueDoc {
   name: string;

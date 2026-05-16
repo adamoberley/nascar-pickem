@@ -8,4 +8,18 @@ export default defineConfig({
   plugins: [react()],
   // Load .env from repo root (parent of web/) when using workspaces
   envDir: path.resolve(__dirname, ".."),
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          firebase: [
+            "firebase/app",
+            "firebase/auth",
+            "firebase/firestore",
+            "firebase/functions",
+          ],
+        },
+      },
+    },
+  },
 });
