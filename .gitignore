@@ -11,3 +11,7 @@ web/vite.config.d.ts
 .env.local
 .env.*.local
 service-account.json
+
+# Xcode user state (IDE-local: open tabs, scroll position, breakpoints)
+*.xcuserstate
+xcuserdata/
