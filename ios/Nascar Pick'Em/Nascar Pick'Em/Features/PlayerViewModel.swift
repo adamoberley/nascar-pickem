@@ -261,6 +261,11 @@ final class PlayerViewModel: ObservableObject {
     }
 
     func applyLeagueSelection(leagueId: String) {
+        // Preserve standings-listener state across league switches so the
+        // user doesn't see a blank Standings tab when they swap leagues
+        // while it's already on screen. .onAppear won't refire because the
+        // view stays mounted; we re-attach explicitly below.
+        let wasObservingStandings = seasonScoresListener != nil || allWeeklyScoresListener != nil
         clearListeners()
 
         guard let userId = currentUserId,
@@ -327,6 +332,9 @@ final class PlayerViewModel: ObservableObject {
         observeLiveRacePicks()
         observeStandingsSnapshot()
         observeNotifications()
+        if wasObservingStandings {
+            beginObservingStandings()
+        }
     }
 
     /// Fetches league preview (member names) for the join flow when user enters invite code.
