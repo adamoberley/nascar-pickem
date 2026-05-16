@@ -58,6 +58,8 @@ final class PlayerViewModel: ObservableObject {
     private var liveRacePicksListener: ListenerRegistration?
     private var liveWeeklyScoresListener: ListenerRegistration?
     private var selectedRaceWeeklyScoresListener: ListenerRegistration?
+    /// Set true while HomeView is on screen. liveRacePicks is only consumed by Home.
+    private var wantsLiveRacePicks: Bool = false
     private var liveRacePicksUnlockTimer: Timer?
     private var standingsSnapshotListener: ListenerRegistration?
     private var adjustmentsListener: ListenerRegistration?
@@ -582,7 +584,8 @@ final class PlayerViewModel: ObservableObject {
         liveRacePicksListener = nil
         liveRacePicksUnlockTimer?.invalidate()
         liveRacePicksUnlockTimer = nil
-        guard let leagueId = selectedLeague?.id,
+        guard wantsLiveRacePicks,
+              let leagueId = selectedLeague?.id,
               let race = effectiveLiveRace else {
             liveRacePicks = []
             return
@@ -715,6 +718,22 @@ final class PlayerViewModel: ObservableObject {
         seasonScoresListener = nil
         allWeeklyScoresListener?.remove()
         allWeeklyScoresListener = nil
+    }
+
+    /// Attach the live race picks listener. Only HomeView consumes liveRacePicks,
+    /// so it's gated by Home visibility via begin/endObservingLiveRacePicks.
+    func beginObservingLiveRacePicks() {
+        wantsLiveRacePicks = true
+        observeLiveRacePicks()
+    }
+
+    func endObservingLiveRacePicks() {
+        wantsLiveRacePicks = false
+        liveRacePicksListener?.remove()
+        liveRacePicksListener = nil
+        liveRacePicksUnlockTimer?.invalidate()
+        liveRacePicksUnlockTimer = nil
+        liveRacePicks = []
     }
 
     private func clearListeners() {

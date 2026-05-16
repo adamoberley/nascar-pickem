@@ -354,6 +354,8 @@ struct HomeView: View {
             }
             .appScreenBackground()
             .toolbar(.hidden, for: .navigationBar)
+            .onAppear { viewModel.beginObservingLiveRacePicks() }
+            .onDisappear { viewModel.endObservingLiveRacePicks() }
             .onChange(of: homeRace?.id) { _, _ in
                 expandedLiveLeaderboardUserId = viewModel.currentUserId
                 liveRefreshBusy = false
