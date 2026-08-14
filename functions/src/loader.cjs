@@ -23,6 +23,7 @@ const FUNCTION_NAMES = [
   "ingestLeagueDataDaily",
   "refreshRaceResults",
   "sendPickReminders",
+  "sendDayBeforeRaceReminders",
 ];
 
 let bundle;

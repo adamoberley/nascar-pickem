@@ -17,7 +17,7 @@ Private season-long NASCAR Pick'Em platform for ~20–21 users with:
   - pick save validation + lock behavior
   - scoring + season ranks
   - ingestion adapter and scheduled refresh jobs
-  - race-week and lock-window missing-pick reminders
+  - race-week, day-before, and lock-window missing-pick reminders
   - manual admin overrides + penalties/adjustments
 - Firestore Security Rules enforcing role access and lock-time pick restrictions
 - Web app with player flows and admin operations
@@ -64,7 +64,10 @@ Core behavior:
 4. Live race sync from NASCAR.com via callable (`syncLiveRaceNow`) using live stage points plus lap/position metadata.
 5. Re-score races when lock cycles, manual live sync, result refresh, or admin updates change race data.
 6. Recompute season totals/rank as part of each race re-score.
-7. Admin callables:
+7. Missing-pick reminders (push + in-app notification, optional email):
+   - `sendDayBeforeRaceReminders` — daily at 5:00 PM ET; nudges members who haven't picked when the next race locks on the following calendar day (ET). Deduped per player per race, so each race triggers at most one day-before reminder.
+   - `sendPickReminders` — Sundays at 1:00 PM ET; race-week and lock-window buckets (168h/72h/24h/12h/3h).
+8. Admin callables:
    - `manualUpsertRacePoints`
    - `addAdjustment`
    - `manualRefreshData`
@@ -133,7 +136,7 @@ To run on iOS:
 4. Build and run on a simulator or device.
 
 Push reminder prerequisites (iOS):
-- Enable **Push Notifications** capability in the iOS target.
+- **Push Notifications** capability is committed (`ios/Nascar Pick'Em/Nascar-Pick-Em.entitlements`, wired via `CODE_SIGN_ENTITLEMENTS`). The App ID must have Push Notifications enabled; automatic signing adds it on archive.
 - Upload APNs key/cert in Firebase Console (Project settings → Cloud Messaging).
 
 Reminder channel controls (Cloud Functions env):

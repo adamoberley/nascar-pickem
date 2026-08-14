@@ -21,4 +21,5 @@ export {
   ingestLeagueDataDaily,
   refreshRaceResults,
   sendPickReminders,
+  sendDayBeforeRaceReminders,
 } from "./scheduled";

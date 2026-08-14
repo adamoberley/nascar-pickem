@@ -17,6 +17,14 @@ import {
   userNotificationsRef,
 } from "./data";
 import { ingestScheduleAndStandings, refreshRecentRaceResults } from "./ingest";
+import {
+  REMINDER_TIME_ZONE,
+  resolveDayBeforeBucket,
+  resolveLookaheadBucket,
+  toReminderMessage,
+  toReminderTitle,
+  type PickReminderBucket,
+} from "./reminders";
 import { rescoreRace } from "./scoring";
 import type {
   PickDoc,
@@ -26,12 +34,18 @@ import type {
 
 const LOCK_CHECK_SCHEDULE = "every 30 minutes";
 const PICK_REMINDER_SCHEDULE = "0 13 * * SUN";
+/** Daily "your race is tomorrow" sweep; 5pm ET lands in the evening for everyone. */
+const DAY_BEFORE_REMINDER_SCHEDULE = "0 17 * * *";
 const PICK_REMINDER_LOOKAHEAD_HOURS = 168;
 const ENABLE_PUSH_REMINDERS = process.env.ENABLE_PUSH_REMINDERS !== "0";
 const ENABLE_EMAIL_REMINDERS = process.env.ENABLE_EMAIL_REMINDERS === "1";
 const REMINDER_EMAIL_FROM = process.env.REMINDER_EMAIL_FROM?.trim() ?? "";
 
-type PickReminderBucket = "168h" | "72h" | "24h" | "12h" | "3h";
+/** Maps a race lock time to the reminder bucket a given schedule should send. */
+type ReminderBucketResolver = (
+  lockMs: number,
+  nowMs: number,
+) => PickReminderBucket | null;
 
 type CachedDeviceToken = {
   deviceId: string;
@@ -92,29 +106,6 @@ async function lockDueRacesForLeague(
     await lockRaceAndSubmittedPicks(leagueId, raceDocSnap.id, "lock-time-reached");
   }
   return raceSnap.size;
-}
-
-function getPickReminderBucket(hoursUntilLock: number): PickReminderBucket | null {
-  if (!Number.isFinite(hoursUntilLock) || hoursUntilLock <= 0) return null;
-  if (hoursUntilLock <= 3) return "3h";
-  if (hoursUntilLock <= 12) return "12h";
-  if (hoursUntilLock <= 24) return "24h";
-  if (hoursUntilLock <= 72) return "72h";
-  if (hoursUntilLock <= 168) return "168h";
-  return null;
-}
-
-function toReminderMessage(hoursUntilLock: number, raceName: string): string {
-  if (hoursUntilLock <= 3) {
-    return `Picks lock soon for ${raceName}. Confirm your picks now.`;
-  }
-  if (hoursUntilLock <= 12) {
-    return `Picks lock today for ${raceName}. Confirm your picks now.`;
-  }
-  if (hoursUntilLock <= 24) {
-    return `Reminder: confirm your picks for ${raceName}.`;
-  }
-  return `Weekly reminder: confirm your picks for ${raceName}.`;
 }
 
 function toReminderEmailBody(input: {
@@ -285,6 +276,7 @@ async function queueReminderEmail(input: {
 async function queueMissingPickRemindersForLeague(
   leagueId: string,
   now: Timestamp,
+  resolveBucket: ReminderBucketResolver,
 ): Promise<{ remindersCreated: number; racesChecked: number; pushSent: number; emailsQueued: number }> {
   const nowMs = now.toMillis();
   const lockHorizon = Timestamp.fromMillis(
@@ -319,8 +311,7 @@ async function queueMissingPickRemindersForLeague(
     const raceId = raceDocSnap.id;
     const race = raceDocSnap.data() as RaceDoc;
     const lockMs = race.lockTime.toMillis();
-    const hoursUntilLock = (lockMs - nowMs) / (60 * 60 * 1000);
-    const bucket = getPickReminderBucket(hoursUntilLock);
+    const bucket = resolveBucket(lockMs, nowMs);
     if (!bucket) continue;
 
     const [membersSnap, picksSnap] = await Promise.all([
@@ -347,8 +338,8 @@ async function queueMissingPickRemindersForLeague(
             type: "pick_reminder",
             leagueId,
             raceId,
-            title: `${leagueName}: picks due`,
-            message: toReminderMessage(hoursUntilLock, race.name),
+            title: toReminderTitle(bucket, leagueName),
+            message: toReminderMessage(bucket, race.name),
             lockTime: race.lockTime,
             createdAt: nowTimestamp(),
           };
@@ -448,36 +439,70 @@ export const refreshRaceResults = onSchedule(
   },
 );
 
+async function runPickReminderCycle(input: {
+  cycle: string;
+  resolveBucket: ReminderBucketResolver;
+}): Promise<void> {
+  const leagueIds = await getLeagueIds();
+  const now = nowTimestamp();
+  let remindersCreated = 0;
+  let racesChecked = 0;
+  let pushSent = 0;
+  let emailsQueued = 0;
+
+  for (const leagueId of leagueIds) {
+    const result = await queueMissingPickRemindersForLeague(
+      leagueId,
+      now,
+      input.resolveBucket,
+    );
+    remindersCreated += result.remindersCreated;
+    racesChecked += result.racesChecked;
+    pushSent += result.pushSent;
+    emailsQueued += result.emailsQueued;
+  }
+
+  logger.info("Pick reminder cycle complete", {
+    cycle: input.cycle,
+    leaguesChecked: leagueIds.length,
+    racesChecked,
+    remindersCreated,
+    pushSent,
+    emailsQueued,
+    pushEnabled: ENABLE_PUSH_REMINDERS,
+    emailEnabled: ENABLE_EMAIL_REMINDERS,
+  });
+}
+
 export const sendPickReminders = onSchedule(
   {
     schedule: PICK_REMINDER_SCHEDULE,
-    timeZone: "America/New_York",
+    timeZone: REMINDER_TIME_ZONE,
     retryCount: 1,
   },
   async () => {
-    const leagueIds = await getLeagueIds();
-    const now = nowTimestamp();
-    let remindersCreated = 0;
-    let racesChecked = 0;
-    let pushSent = 0;
-    let emailsQueued = 0;
+    await runPickReminderCycle({
+      cycle: "lock-window",
+      resolveBucket: resolveLookaheadBucket,
+    });
+  },
+);
 
-    for (const leagueId of leagueIds) {
-      const result = await queueMissingPickRemindersForLeague(leagueId, now);
-      remindersCreated += result.remindersCreated;
-      racesChecked += result.racesChecked;
-      pushSent += result.pushSent;
-      emailsQueued += result.emailsQueued;
-    }
-
-    logger.info("Pick reminder cycle complete", {
-      leaguesChecked: leagueIds.length,
-      racesChecked,
-      remindersCreated,
-      pushSent,
-      emailsQueued,
-      pushEnabled: ENABLE_PUSH_REMINDERS,
-      emailEnabled: ENABLE_EMAIL_REMINDERS,
+/**
+ * Nudges anyone without picks on the calendar day before their next race.
+ * Deduped per race by the "day-before" bucket, so it sends at most once
+ * per player per race even though the job runs daily.
+ */
+export const sendDayBeforeRaceReminders = onSchedule(
+  {
+    schedule: DAY_BEFORE_REMINDER_SCHEDULE,
+    timeZone: REMINDER_TIME_ZONE,
+    retryCount: 1,
+  },
+  async () => {
+    await runPickReminderCycle({
+      cycle: "day-before",
+      resolveBucket: resolveDayBeforeBucket,
     });
   },
 );
