@@ -17,8 +17,9 @@ import {
 } from "./nascar-live";
 import type { FetchLiveFeedResult } from "./nascar-live";
 import {
-  buildNumberToDriverId,
+  buildDriverLookup,
   resolveDriverIdFromVehicleNumber,
+  resolveDriverIdsForIdentity,
 } from "./driver-mapping";
 import { rescoreRace } from "./scoring";
 import type { DriverDoc, LeagueDoc, RaceDoc, RaceDriverPoints } from "./types";
@@ -146,9 +147,10 @@ export async function applyNascarLiveFeedToLeague(
       if (entry?.driverId) activeDriverIds.add(entry.driverId);
     }
   }
-  const numberToDriverId = buildNumberToDriverId(driversSnap, {
+  const driverLookup = buildDriverLookup(driversSnap, {
     includeDriverIds: activeDriverIds,
   });
+  const numberToDriverId = driverLookup.numberToDriverId;
 
   // When live feed is unavailable, try stage points only using the resolved NASCAR race_id for the current league race.
   if (!feed) {
@@ -223,20 +225,34 @@ export async function applyNascarLiveFeedToLeague(
     return { updated: false, reason: "No matching lock/start-eligible race found for this league." };
   }
 
+  // Resolve feed cars by driver identity (driver_id/name) first; the live feed
+  // carries both, and car numbers alone can be stale on league driver docs.
+  const driverIdsByVehicle = new Map<string, string[]>();
   const runningPositionByDriverId = new Map<string, number>();
   for (const fd of feed.drivers) {
-    const driverId = resolveDriverIdFromVehicleNumber(fd.vehicleNumber, numberToDriverId);
-    if (driverId) runningPositionByDriverId.set(driverId, fd.runningPosition);
+    const driverIds = resolveDriverIdsForIdentity(fd, driverLookup);
+    driverIdsByVehicle.set(fd.vehicleNumber.trim(), driverIds);
+    for (const driverId of driverIds) {
+      runningPositionByDriverId.set(driverId, fd.runningPosition);
+    }
   }
 
   const byDriverId = new Map<string, { basePoints: number; runningPosition?: number }>();
   for (const [vehicleNum, stagePts] of stagePointsByVehicle) {
-    const driverId = resolveDriverIdFromVehicleNumber(vehicleNum, numberToDriverId);
-    if (!driverId) continue;
-    byDriverId.set(driverId, {
-      basePoints: stagePts,
-      runningPosition: runningPositionByDriverId.get(driverId),
-    });
+    const fromFeedIdentity = driverIdsByVehicle.get(vehicleNum.trim());
+    const driverIds =
+      fromFeedIdentity && fromFeedIdentity.length > 0
+        ? fromFeedIdentity
+        : (() => {
+            const byNumber = resolveDriverIdFromVehicleNumber(vehicleNum, numberToDriverId);
+            return byNumber ? [byNumber] : [];
+          })();
+    for (const driverId of driverIds) {
+      byDriverId.set(driverId, {
+        basePoints: stagePts,
+        runningPosition: runningPositionByDriverId.get(driverId),
+      });
+    }
   }
 
   const drivers: RaceDriverPoints[] = Array.from(byDriverId.entries()).map(([driverId, { basePoints, runningPosition }]) =>

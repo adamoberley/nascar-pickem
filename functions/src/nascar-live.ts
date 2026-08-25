@@ -65,6 +65,8 @@ export interface LiveFeedDriverPoints {
   vehicleNumber: string;
   /** NASCAR driver full name. */
   driverName: string;
+  /** NASCAR numeric driver_id; the stable key for mapping to league drivers. */
+  nascarDriverId?: number;
   /** Current running position (1-based). */
   runningPosition: number;
   /** Total laps led (informational only; not used for points). */
@@ -104,6 +106,8 @@ export interface NascarOfficialRaceResult {
   driverName: string;
   points: number;
   vehicleNumber: string;
+  /** NASCAR numeric driver_id; the stable key for mapping to league drivers. */
+  nascarDriverId?: number;
 }
 
 /** Basic race metadata from cf.nascar.com race_list_basic.json. */
@@ -153,6 +157,7 @@ interface NascarWeekendRaceResult {
   official_car_number?: string;
   car_number?: string;
   driver_fullname?: string;
+  driver_id?: number;
   points_earned?: number;
 }
 
@@ -216,6 +221,8 @@ function computeLivePoints(feed: NascarLiveFeed): FetchLiveFeedResult {
     return {
       vehicleNumber: String(v.vehicle_number),
       driverName: v.driver?.full_name ?? "",
+      nascarDriverId:
+        typeof v.driver?.driver_id === "number" ? v.driver.driver_id : undefined,
       runningPosition: v.running_position,
       lapsLed,
       basePoints,
@@ -598,6 +605,8 @@ function extractOfficialResultsFromWeekendRace(
       driverName: String(result.driver_fullname ?? "").trim(),
       points,
       vehicleNumber,
+      nascarDriverId:
+        typeof result.driver_id === "number" ? result.driver_id : undefined,
     });
   }
   return rows.sort((a, b) => a.finishPosition - b.finishPosition);
