@@ -20,9 +20,10 @@ import {
   resolveNascarRaceIdForLeagueRace,
 } from "./nascar-live";
 import {
-  buildNumberToDriverId,
+  buildDriverLookup,
   mapOfficialResultsToDrivers,
   mapVehiclePointsToDrivers,
+  normalizeDriverNameKey,
 } from "./driver-mapping";
 import { rescoreRace } from "./scoring";
 import { recomputeTiersForUpcomingRaces } from "./tiers";
@@ -42,14 +43,6 @@ const LEGACY_NON_POINTS_RACE_IDS = [
   "2026-duel-2",
   "2026-all-star",
 ];
-
-function normalizeDriverName(name: string): string {
-  return (name ?? "")
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, "");
-}
 
 function normalizeVehicleNumber(number: string | undefined): string {
   if (!number) return "";
@@ -360,7 +353,7 @@ export async function ingestScheduleAndStandings(leagueId: string): Promise<void
         driverIdByVehicleNumber.set(String(numeric), docSnap.id);
       }
     }
-    const nameKey = normalizeDriverName(driver.name);
+    const nameKey = normalizeDriverNameKey(driver.name);
     if (nameKey && !driverIdByName.has(nameKey)) {
       driverIdByName.set(nameKey, docSnap.id);
     }
@@ -391,7 +384,7 @@ export async function ingestScheduleAndStandings(leagueId: string): Promise<void
     }
     if (!driverId) {
       driverId =
-        driverIdByName.get(normalizeDriverName(standing.driverName)) ??
+        driverIdByName.get(normalizeDriverNameKey(standing.driverName)) ??
         null;
     }
     if (!driverId) {
@@ -410,7 +403,7 @@ export async function ingestScheduleAndStandings(leagueId: string): Promise<void
     if (!Number.isNaN(numericVehicle)) {
       driverIdByVehicleNumber.set(String(numericVehicle), driverId);
     }
-    driverIdByName.set(normalizeDriverName(standing.driverName), driverId);
+    driverIdByName.set(normalizeDriverNameKey(standing.driverName), driverId);
 
     const driverDoc: DriverDoc = {
       name: standing.driverName,
@@ -473,7 +466,7 @@ export async function refreshRecentRaceResults(
       if (entry?.driverId) activeDriverIds.add(entry.driverId);
     }
   }
-  const driverIdByNumber = buildNumberToDriverId(driverSnap, {
+  const driverLookup = buildDriverLookup(driverSnap, {
     includeDriverIds: activeDriverIds,
   });
 
@@ -512,7 +505,7 @@ export async function refreshRecentRaceResults(
     }));
     const nascarPointsFromOfficial = mapOfficialResultsToDrivers(
       nascarOfficialResults,
-      driverIdByNumber,
+      driverLookup,
     );
     const nascarPoints =
       nascarPointsFromOfficial.length > 0
@@ -522,7 +515,7 @@ export async function refreshRecentRaceResults(
               seasonYear,
               nascarRaceId,
             ),
-            driverIdByNumber,
+            driverLookup.numberToDriverId,
           );
 
     if (nascarPoints.length >= 20) {
